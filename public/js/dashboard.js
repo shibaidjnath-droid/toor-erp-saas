@@ -730,10 +730,6 @@ function openModal(title, fields, onSave, onDelete) {
     o.remove();
   };
 
-  // ✅ Geef modal terug zodat we hem buiten kunnen manipuleren
-  return o;
-
-
 function confirmDelete(type,onC){
   if(confirm(`Weet je zeker dat je deze ${type} wilt verwijderen?`))onC();
 }
