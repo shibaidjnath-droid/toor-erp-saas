@@ -275,7 +275,13 @@ async function renderClients() {
       renderClients();
     });
     // Na het opslaan van klant in renderClients()
-const klant = await res.json();
+const response = await fetch("/api/clients", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(vals),
+});
+
+const klant = await response.json();
 
 // 🔹 Als er contractvelden zijn ingevuld: haal nieuwe contractenlijst op
 if (vals.contract_typeService || vals.contract_description) {
@@ -711,24 +717,6 @@ function openModal(title, fields, onSave, onDelete) {
     onSave(data);
   };
 }
-
-
-  o.appendChild(c);
-  document.body.appendChild(o);
-
-  c.querySelector("#delBtn").style.display = onDel ? "block" : "none";
-  c.querySelector("#delBtn").onclick = () => { onDel(); o.remove(); };
-  c.querySelector("#cancel").onclick = () => o.remove();
-  c.querySelector("#save").onclick = () => {
-    const vals = {};
-    fields.forEach(f => {
-      if (f.type === "multiselect")
-        vals[f.id] = Array.from(c.querySelectorAll(`input[name='${f.id}']:checked`)).map(x => x.value);
-      else vals[f.id] = c.querySelector(`#${f.id}`).value;
-    });
-    onSave(vals);
-    o.remove();
-  };
 
 function confirmDelete(type,onC){
   if(confirm(`Weet je zeker dat je deze ${type} wilt verwijderen?`))onC();
