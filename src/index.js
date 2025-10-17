@@ -6,22 +6,22 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 // Bestaand
-import clientsRouter from "./routes/clients.js";
-import invoicesRouter from "./routes/invoices.js";
-import webhookRouter from './routes/webhook.js';
-import tagsRouter from './routes/tags.js';
-import emailLogRouter from './routes/emailLog.js';
-import settingsRouter from './routes/settings.js';
-import leadsRouter from './routes/leads.js';
-import quotesRouter from './routes/quotes.js';
-import planningRouter from './routes/planning.js';
+import clientsRouter from "../routes/clients.js";
+import invoicesRouter from "../routes/invoices.js";
+import webhookRouter from '../routes/webhook.js';
+import tagsRouter from '../routes/tags.js';
+import emailLogRouter from '../routes/emailLog.js';
+import settingsRouter from '../routes/settings.js';
+import leadsRouter from '../routes/leads.js';
+import quotesRouter from '../routes/quotes.js';
+import planningRouter from '../routes/planning.js';
 
 // 🔥 NIEUW — deze ontbraken
-import contractsRouter from './routes/contracts.js';
-import membersRouter from './routes/members.js';
-import rolesRouter from './routes/roles.js';
+import contractsRouter from '../routes/contracts.js';
+import membersRouter from '../routes/members.js';
+import rolesRouter from '../routes/roles.js';
 // Let op bestandsnaam: jouw file heet ServiceTypes.js
-import serviceTypesRouter from './routes/serviceTypes.js';
+import serviceTypesRouter from '../routes/serviceTypes.js';
 
 const app = express();
 app.use(express.json());
