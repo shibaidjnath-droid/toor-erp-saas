@@ -2,7 +2,6 @@
 import express from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { contacts } from './contacts.js';
-import { serviceTypes } from './serviceTypes.js';
 
 const router = express.Router();
 export let contracts = []; // ✅ explicit named export
