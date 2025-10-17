@@ -2,7 +2,6 @@
 import express from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { contracts } from './contracts.js';
-import { serviceTypes } from './serviceTypes.js';
 
 const router = express.Router();
 export let clients = [];
@@ -72,8 +71,9 @@ router.post('/', (req, res) => {
   let newContract = null;
   if (contract_typeService || contract_description) {
     const validServices = Array.isArray(contract_typeService)
-      ? contract_typeService.filter(s => serviceTypes.includes(s))
-      : [contract_typeService].filter(s => serviceTypes.includes(s));
+  ? contract_typeService
+  : [contract_typeService];
+
 
     const freq = contract_frequency || 'Maand';
     const vat = isNaN(parseFloat(contract_vat)) ? 21 : parseFloat(contract_vat);
