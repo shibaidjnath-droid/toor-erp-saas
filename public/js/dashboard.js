@@ -204,105 +204,133 @@ function openFromSearch(tab, id) {
 }
 // ---------- Rendering Tabs ----------
 
-// 🧍 Klanten
-function renderClients() {
+// ---------- 🧍 Klanten ----------
+async function renderClients() {
   const list = document.getElementById("clientsList");
   const rows = clients.map(c => [
-    c.name, c.email, c.phone,
-    `${c.street} ${c.houseNumber}`, c.city, c.tag
+    c.name,
+    c.email,
+    c.phone,
+    c.typeKlant,
+    c.verzendMethode,
+    c.tag || "-",
+    c.status || "Active"
   ]);
-  list.innerHTML = tableHTML(["Naam","E-mail","Telefoon","Adres","Plaats","Tag"], rows);
-  list.querySelectorAll("tbody tr").forEach((tr,i)=>
-    tr.addEventListener("click",()=>openClientDetail(clients[i])));
-  document.getElementById("newClientBtn").onclick = () =>
-  openModal("Nieuwe Klant", [
-    { id: "name", label: "Naam" },
-    { id: "email", label: "E-mail" },
-    { id: "phone", label: "Telefoon" },
-    { id: "street", label: "Straat" },
-    { id: "houseNumber", label: "Huisnummer" },
-    { id: "city", label: "Plaats" },
-    { id: "tag", label: "Tag", type: "select", options: settings.tags },
-  ], async vals => {
-    // Verstuur nieuwe klant naar backend
-    const res = await fetch("/api/clients", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(vals)
-    });
-    const newClient = await res.json();
-    clients.push(newClient);
-    showToast("Klant opgeslagen", "success");
-    renderClients();
-  });
 
+  list.innerHTML = tableHTML(
+    ["Naam", "E-mail", "Telefoon", "Type klant", "Verzendmethode", "Tag", "Status"],
+    rows
+  );
+
+  list.querySelectorAll("tbody tr").forEach((tr, i) =>
+    tr.addEventListener("click", () => openClientDetail(clients[i]))
+  );
+
+  document.getElementById("newClientBtn").onclick = () =>
+    openModal("Nieuwe Klant", [
+      { id: "name", label: "Naam" },
+      { id: "email", label: "E-mail" },
+      { id: "phone", label: "Telefoon" },
+      { id: "address", label: "Adres" },
+      { id: "houseNumber", label: "Huisnummer" },
+      { id: "city", label: "Plaats" },
+      { id: "typeKlant", label: "Type Klant", type: "select", options: ["Particulier", "Zakelijk"], value: "Particulier" },
+      { id: "bedrijfsnaam", label: "Bedrijfsnaam", hidden: true },
+      { id: "kvk", label: "KvK", hidden: true },
+      { id: "btw", label: "BTW", hidden: true },
+      { id: "verzendMethode", label: "Verzendmethode", type: "select", options: ["Whatsapp", "Email"], value: "Email" },
+      { id: "tag", label: "Tag", type: "select", options: settings.tags },
+
+      // ---- Contractsectie ----
+      { id: "contract_typeService", label: "Contract: Type Service", type: "select", options: settings.typeServices },
+      { id: "contract_frequency", label: "Contract: Frequentie", type: "select", options: settings.frequencies },
+      { id: "contract_description", label: "Contract: Beschrijving" },
+      { id: "contract_priceInc", label: "Contract: Prijs incl. (€)" },
+      { id: "contract_vat", label: "Contract: BTW (%)", type: "select", options: ["21", "9", "0"], value: "21" },
+      { id: "contract_lastVisit", label: "Contract: Laatste bezoek", type: "date" },
+    ], async (vals) => {
+      // Dynamische velden tonen/verbergen
+      if (vals.typeKlant === "Zakelijk") {
+        document.querySelector(`[name="bedrijfsnaam"]`).parentElement.style.display = "block";
+        document.querySelector(`[name="kvk"]`).parentElement.style.display = "block";
+        document.querySelector(`[name="btw"]`).parentElement.style.display = "block";
+      }
+
+      // 🔹 1️⃣ Klant opslaan
+      const res = await fetch("/api/clients", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(vals),
+      });
+
+      if (!res.ok) {
+        showToast("Fout bij opslaan van klant", "error");
+        return;
+      }
+
+      const klant = await res.json();
+
+      showToast(`Klant ${klant.name} aangemaakt`, "success");
+      clients.push(klant);
+      renderClients();
+    });
+    // Na het opslaan van klant in renderClients()
+const klant = await res.json();
+
+// 🔹 Als er contractvelden zijn ingevuld: haal nieuwe contractenlijst op
+if (vals.contract_typeService || vals.contract_description) {
+  const cRes = await fetch("/api/contracts");
+  if (cRes.ok) {
+    const newContracts = await cRes.json();
+    // Globale lijst updaten
+    contracts = newContracts;
+    showToast("Contract gekoppeld en bijgewerkt", "success");
+  }
+}
+
+showToast(`Klant ${klant.name} aangemaakt`, "success");
+clients.push(klant);
+renderClients();
 }
 
 function openClientDetail(c) {
-  const modal = openModal(`Klant bewerken – ${c.name}`, [
+  openModal(`Klant bewerken – ${c.name}`, [
+    { id: "id", label: "Klant ID", value: c.id, readonly: true },
     { id: "name", label: "Naam", value: c.name },
     { id: "email", label: "E-mail", value: c.email },
     { id: "phone", label: "Telefoon", value: c.phone },
-    { id: "street", label: "Straat", value: c.street },
+    { id: "address", label: "Adres", value: c.address },
     { id: "houseNumber", label: "Huisnummer", value: c.houseNumber },
     { id: "city", label: "Plaats", value: c.city },
+    { id: "typeKlant", label: "Type Klant", type: "select", options: ["Particulier", "Zakelijk"], value: c.typeKlant },
+    { id: "bedrijfsnaam", label: "Bedrijfsnaam", value: c.bedrijfsnaam || "", hidden: c.typeKlant !== "Zakelijk" },
+    { id: "kvk", label: "KvK", value: c.kvk || "", hidden: c.typeKlant !== "Zakelijk" },
+    { id: "btw", label: "BTW", value: c.btw || "", hidden: c.typeKlant !== "Zakelijk" },
+    { id: "verzendMethode", label: "Verzendmethode", type: "select", options: ["Whatsapp", "Email"], value: c.verzendMethode },
     { id: "tag", label: "Tag", type: "select", options: settings.tags, value: c.tag },
-  ],
-  vals => {
-    Object.assign(c, vals);
+    { id: "status", label: "Status", type: "select", options: ["Active", "Inactive"], value: c.status },
+  ], async (vals) => {
+    const res = await fetch(`/api/clients/${c.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(vals),
+    });
+
+    if (!res.ok) {
+      showToast("Fout bij opslaan klant", "error");
+      return;
+    }
+
+    const updated = await res.json();
+    Object.assign(c, updated);
     showToast("Klant opgeslagen", "success");
     renderClients();
-  },
-  () => confirmDelete("klant", () => {
-    clients = clients.filter(x => x.id !== c.id);
-    renderClients();
+  }, () => confirmDelete("klant", async () => {
+    const idx = clients.findIndex(x => x.id === c.id);
+    if (idx > -1) clients.splice(idx, 1);
     showToast("Klant verwijderd", "success");
+    renderClients();
   }));
-
-  // ✅ wacht tot modal in DOM is geplaatst
-  requestAnimationFrame(() => {
-    const footer = modal.querySelector(".flex.justify-between");
-    if (!footer) return;
-
-    const factureerBtn = document.createElement("button");
-    factureerBtn.textContent = "Factureer klant";
-    factureerBtn.className = "btn btn-ok";
-    footer.prepend(factureerBtn);
-
-    factureerBtn.onclick = async () => {
-      showToast(`Factuur aanmaken voor ${c.name}...`, "info");
-
-      try {
-        const res = await fetch("/api/invoices", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            clientId: c.id,
-            amount: 99.5,
-            status: "Open",
-            date: new Date().toISOString().slice(0, 10)
-          }),
-        });
-        const invoice = await res.json();
-        if (!res.ok) throw new Error(invoice.error || "Onbekende fout bij aanmaken factuur");
-
-        await fetch("/api/email-log", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            to: c.email,
-            subject: `Factuur ${invoice.date} – €${invoice.amount.toFixed(2)}`,
-            date: invoice.date
-          }),
-        });
-
-        showToast(`✅ Factuur verzonden naar ${c.email}`, "success");
-      } catch (err) {
-        console.error(err);
-        showToast(`❌ Fout bij factureren: ${err.message}`, "error");
-      }
-    };
-  });
 }
 
 
@@ -577,40 +605,113 @@ function addItem(lbl,key){
 }
 
 // ---------- Helpers ----------
-function openModal(title, fields, onSave, onDel) {
-  const o = document.createElement("div");
-  o.className = "fixed inset-0 bg-black/50 flex items-center justify-center z-40";
+function openModal(title, fields, onSave, onDelete) {
+  // verwijder oude overlay als die er is
+  document.querySelectorAll(".modal-overlay").forEach(el => el.remove());
 
-  const c = document.createElement("div");
-  c.className = "bg-white dark:bg-gray-900 rounded-xl shadow-xl p-6 w-full max-w-md space-y-3";
-  c.innerHTML =
-    `<h2 class="text-lg font-semibold mb-2">${title}</h2>` +
-    fields.map(f => {
-      const v = f.value ?? "";
-      if (f.type === "select")
-        return `<label class="block">
-          <span class="text-sm">${f.label}</span>
-          <select id="${f.id}" class="border rounded w-full px-2 py-1 dark:bg-gray-800">
-            ${f.options.map(o => `<option${o == v ? " selected" : ""}>${o}</option>`).join("")}
-          </select>
-        </label>`;
-      if (f.type === "multiselect")
-        return `<label class="block">
-          <span class="text-sm">${f.label}</span>
-          ${f.options.map(o => `<div><input type="checkbox" name="${f.id}" value="${o}" ${f.value?.includes(o) ? "checked" : ""}/> ${o}</div>`).join("")}
-        </label>`;
-      return `<label class="block">
-        <span class="text-sm">${f.label}</span>
-        <input type="${f.type || "text"}" id="${f.id}" value="${v}" class="border rounded w-full px-2 py-1 dark:bg-gray-800"/>
-      </label>`;
-    }).join("") +
-    `<div class="flex justify-between pt-3">
-      <button id="delBtn" class="text-danger text-sm">Verwijderen</button>
-      <div class="flex gap-2">
-        <button id="cancel" class="px-3 py-1 border rounded">Annuleren</button>
-        <button id="save" class="bg-primary text-white px-3 py-1 rounded">Opslaan</button>
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal-card">
+      <h2 class="text-xl font-semibold mb-4">${title}</h2>
+      <form id="modalForm" class="form-grid"></form>
+      <div class="flex justify-end gap-2 mt-6">
+        ${onDelete ? `<button type="button" id="deleteBtn" class="btn btn-warn">Verwijderen</button>` : ""}
+        <button type="button" id="cancelBtn" class="btn">Annuleren</button>
+        <button type="submit" class="btn btn-primary">Opslaan</button>
       </div>
-    </div>`;
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const form = overlay.querySelector("#modalForm");
+
+  // Velden renderen
+  fields.forEach(f => {
+    const field = document.createElement("div");
+    field.className = "form-field";
+    if (f.hidden) field.style.display = "none";
+
+    const label = document.createElement("label");
+    label.textContent = f.label;
+
+    // input-element kiezen
+    let input;
+    switch (f.type) {
+      case "select":
+        input = document.createElement("select");
+        input.className = "input select";
+        (f.options || []).forEach(opt => {
+          const o = document.createElement("option");
+          o.value = opt;
+          o.textContent = opt;
+          if (opt === f.value) o.selected = true;
+          input.appendChild(o);
+        });
+        break;
+
+      case "multiselect":
+        input = document.createElement("select");
+        input.className = "input select";
+        input.multiple = true;
+        (f.options || []).forEach(opt => {
+          const o = document.createElement("option");
+          o.value = opt;
+          o.textContent = opt;
+          if (Array.isArray(f.value) && f.value.includes(opt)) o.selected = true;
+          input.appendChild(o);
+        });
+        break;
+
+      case "date":
+        input = document.createElement("input");
+        input.type = "date";
+        input.className = "input";
+        if (f.value) input.value = f.value;
+        break;
+
+      default:
+        input = document.createElement("input");
+        input.type = f.type || "text";
+        input.className = "input";
+        if (f.value !== undefined) input.value = f.value;
+        if (f.readonly) input.readOnly = true;
+    }
+
+    input.name = f.id;
+    field.appendChild(label);
+    field.appendChild(input);
+    form.appendChild(field);
+  });
+
+  // --- Eventlisteners ---
+  overlay.querySelector("#cancelBtn").onclick = () => overlay.remove();
+  if (onDelete) overlay.querySelector("#deleteBtn").onclick = () => { overlay.remove(); onDelete(); };
+
+  // Dynamische toggle voor "Zakelijk"
+  form.addEventListener("change", (e) => {
+    if (e.target.name === "typeKlant") {
+      const isZakelijk = e.target.value === "Zakelijk";
+      ["bedrijfsnaam", "kvk", "btw"].forEach(id => {
+        const fld = form.querySelector(`[name="${id}"]`)?.parentElement;
+        if (fld) fld.style.display = isZakelijk ? "flex" : "none";
+      });
+    }
+  });
+
+  // --- Submit handler ---
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    const data = {};
+    form.querySelectorAll("input, select, textarea").forEach(inp => {
+      if (inp.multiple) data[inp.name] = Array.from(inp.selectedOptions).map(o => o.value);
+      else data[inp.name] = inp.value;
+    });
+    overlay.remove();
+    onSave(data);
+  };
+}
+
 
   o.appendChild(c);
   document.body.appendChild(o);
@@ -632,7 +733,7 @@ function openModal(title, fields, onSave, onDel) {
   // ✅ Geef modal terug zodat we hem buiten kunnen manipuleren
   return o;
 
-}
+
 function confirmDelete(type,onC){
   if(confirm(`Weet je zeker dat je deze ${type} wilt verwijderen?`))onC();
 }
@@ -646,9 +747,21 @@ function showToast(msg,type="info"){
 const s=document.createElement("style");
 s.innerHTML=`@keyframes fadeIn{from{opacity:0;transform:translateY(5px);}to{opacity:1;transform:translateY(0);}}.animate-fadeIn{animation:fadeIn .3s ease;transition:all .3s;}`;
 document.head.appendChild(s);
-function tableHTML(h,rows){
-  return `<table class="min-w-full text-sm border border-gray-200 dark:border-gray-700"><thead class="bg-gray-100 dark:bg-gray-800"><tr>${h.map(x=>`<th class='px-3 py-2 text-left'>${x}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr class='border-t border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer'>${r.map(c=>`<td class='px-3 py-2'>${c}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+function tableHTML(headers, rows) {
+  return `
+    <table class="min-w-full border-collapse table-auto text-sm bg-white dark:bg-gray-900 rounded-lg shadow-sm overflow-hidden">
+      <thead class="bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
+        <tr>${headers.map(h => `<th class="px-4 py-2 text-left">${h}</th>`).join("")}</tr>
+      </thead>
+      <tbody>
+        ${rows.map(r => `
+          <tr class="hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer transition">
+            ${r.map(v => `<td class="px-4 py-2 border-t border-gray-100 dark:border-gray-800">${v ?? "-"}</td>`).join("")}
+          </tr>`).join("")}
+      </tbody>
+    </table>`;
 }
+
 function calcNextVisit(last,freq){
   if(!last)return"-";
   const d=new Date(last);const f=freq.toLowerCase();
