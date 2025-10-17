@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="nl" class="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TOOR ERP SaaS Dashboard</title>
+  <link rel="stylesheet" href="/css/style.css" />
+
+
+  <!-- ✅ Tailwind via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            primary: '#2563eb',
+            success: '#16a34a',
+            danger: '#dc2626',
+            surfaceDark: '#1e1e1e',
+          },
+        },
+      },
+    };
+  </script>
+</head>
+<style>
+  /* ---------- Modal Styling ---------- */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+  }
+  .modal-card {
+    background: white;
+    color: #111;
+    padding: 1.5rem;
+    border-radius: 0.75rem;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+    width: 400px;
+    max-width: 90%;
+  }
+  .dark .modal-card {
+    background: #1f2937;
+    color: #f3f4f6;
+  }
+  .form-field { margin-bottom: 0.75rem; }
+  .form-field label { display:block; font-weight:600; margin-bottom:0.25rem; }
+  .input, .select {
+    width: 100%;
+    border: 1px solid #ccc;
+    border-radius: 0.375rem;
+    padding: 0.4rem 0.6rem;
+    background: #fff;
+    color: #111;
+  }
+  .dark .input, .dark .select {
+    background: #374151;
+    border-color: #4b5563;
+    color: #f3f4f6;
+  }
+  .btn { padding: 0.4rem 0.8rem; border-radius: 0.375rem; font-size: 0.9rem; }
+  .btn-ok { background:#2563eb;color:white; }
+  .btn-secondary { background:#e5e7eb;color:#111; }
+  .btn-warn { background:#dc2626;color:white; }
+  .btn:hover { opacity:0.9; }
+</style>
+
+
+<body class="bg-gray-50 dark:bg-surfaceDark dark:text-gray-100 transition-colors duration-300">
+
+  <!-- Header -->
+  <header class="border-b bg-white dark:bg-gray-900 dark:border-gray-800 p-4 flex justify-between items-center">
+    <h1 class="text-2xl font-semibold text-primary">TOOR ERP SaaS</h1>
+    <div class="flex items-center gap-4">
+      <input id="globalSearch"
+             class="border rounded px-3 py-1 text-sm dark:bg-gray-800 dark:border-gray-700"
+             placeholder="Zoek overal..." />
+      <span id="activeTabLabel" class="text-sm text-gray-500 dark:text-gray-400"></span>
+    </div>
+  </header>
+
+  <!-- Tabs Navigation -->
+  <nav class="bg-white dark:bg-gray-900 dark:border-gray-800 border-b">
+    <ul class="flex flex-wrap gap-1 px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300">
+      <li><button class="tab-btn px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800" data-tab="clients">Klanten</button></li>
+      <li><button class="tab-btn px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800" data-tab="contracts">Contracten</button></li>
+      <li><button class="tab-btn px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800" data-tab="planning">Planning</button></li>
+      <li><button class="tab-btn px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800" data-tab="invoices">Facturen</button></li>
+      <li><button class="tab-btn px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800" data-tab="members">Members</button></li>
+      <li><button class="tab-btn px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800" data-tab="emailLog">Email log</button></li>
+      <li><button class="tab-btn px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800" data-tab="leads">Leads</button></li>
+      <li><button class="tab-btn px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800" data-tab="quotes">Offertes</button></li>
+      <li><button class="tab-btn px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800" data-tab="settings">Instellingen</button></li>
+      <li><button class="tab-btn px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800" data-tab="searchResults">Zoekresultaten</button></li>
+    </ul>
+  </nav>
+
+  <!-- Main Content -->
+  <main class="p-4 space-y-6">
+
+    <!-- Klanten -->
+    <section id="clients" class="tab hidden">
+      <div class="flex justify-between mb-4">
+        <h2 class="text-xl font-semibold">Klanten</h2>
+        <button id="newClientBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuw Klant</button>
+      </div>
+      <div id="clientsList"></div>
+    </section>
+
+    <!-- Contracten -->
+    <section id="contracts" class="tab hidden">
+      <div class="flex justify-between mb-4">
+        <h2 class="text-xl font-semibold">Contracten</h2>
+        <button id="newContractBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuw Contract</button>
+      </div>
+      <div id="contractsList"></div>
+    </section>
+
+    <!-- Planning -->
+    <section id="planning" class="tab hidden">
+      <div class="flex justify-between mb-4">
+        <h2 class="text-xl font-semibold">Planning</h2>
+        <button id="newPlanningBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuw Planning-item</button>
+      </div>
+      <div id="planningList"></div>
+    </section>
+
+    <!-- Facturen -->
+    <section id="invoices" class="tab hidden">
+      <div class="flex justify-between mb-4">
+        <h2 class="text-xl font-semibold">Facturen</h2>
+        <button id="newInvoiceBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuwe Factuur</button>
+      </div>
+      <div id="invoicesList"></div>
+    </section>
+
+    <!-- Members -->
+    <section id="members" class="tab hidden">
+      <div class="flex justify-between mb-4">
+        <h2 class="text-xl font-semibold">Members</h2>
+        <button id="newMemberBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuwe Member</button>
+      </div>
+      <div id="membersList"></div>
+    </section>
+
+    <!-- Email Log -->
+    <section id="emailLog" class="tab hidden">
+      <h2 class="text-xl font-semibold mb-4">Email Log</h2>
+      <div id="emailLogList"></div>
+    </section>
+
+    <!-- Leads -->
+    <section id="leads" class="tab hidden">
+      <div class="flex justify-between mb-4">
+        <h2 class="text-xl font-semibold">Leads</h2>
+        <button id="newLeadBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuwe Lead</button>
+      </div>
+      <div id="leadsList"></div>
+    </section>
+
+    <!-- Offertes -->
+    <section id="quotes" class="tab hidden">
+      <div class="flex justify-between mb-4">
+        <h2 class="text-xl font-semibold">Offertes</h2>
+        <button id="newQuoteBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuwe Offerte</button>
+      </div>
+      <div id="quotesList"></div>
+    </section>
+
+    <!-- Instellingen -->
+    <section id="settings" class="tab hidden space-y-8">
+      <div>
+        <h2 class="text-xl font-semibold mb-3">Thema Instellingen</h2>
+        <div class="flex gap-3">
+          <button id="themeLight" class="border px-4 py-2 rounded">Licht</button>
+          <button id="themeDark" class="border px-4 py-2 rounded">Donker</button>
+        </div>
+      </div>
+
+      <div id="emailTemplateSettings"></div>
+      <div id="tagsSettings"></div>
+      <div id="typeServiceSettings"></div>
+      <div id="frequenciesSettings"></div>
+      <div id="rolesSettings"></div>
+    </section>
+
+    <!-- 🔍 Zoekresultaten -->
+    <section id="searchResults" class="tab hidden">
+      <div class="flex justify-between mb-4">
+        <h2 class="text-xl font-semibold">Zoekresultaten</h2>
+      </div>
+      <div id="searchResultsList"></div>
+    </section>
+
+  </main>
+
+  <!-- Toast container -->
+  <div id="toastContainer" class="fixed bottom-5 right-5 flex flex-col gap-3 z-50"></div>
+
+  <!-- ✅ Correct script pad -->
+  <script src="/js/dashboard.js" defer></script>
+</body>
+</html>
