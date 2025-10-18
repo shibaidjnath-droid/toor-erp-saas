@@ -222,10 +222,12 @@ async function renderClients() {
     rows
   );
 
+  // Klik op rij = open klantdetail
   list.querySelectorAll("tbody tr").forEach((tr, i) =>
     tr.addEventListener("click", () => openClientDetail(clients[i]))
   );
 
+  // ✅ Nieuw klant toevoegen
   document.getElementById("newClientBtn").onclick = () =>
     openModal("Nieuwe Klant", [
       { id: "name", label: "Naam" },
@@ -242,62 +244,56 @@ async function renderClients() {
       { id: "tag", label: "Tag", type: "select", options: settings.tags },
 
       // ---- Contractsectie ----
-      { id: "contract_typeService", label: "Contract: Type Service", type: "select", options: settings.typeServices },
+      { id: "contract_typeService", label: "Contract: Type Service", type: "multiselect", options: settings.typeServices }, // ✅ multiselect
       { id: "contract_frequency", label: "Contract: Frequentie", type: "select", options: settings.frequencies },
       { id: "contract_description", label: "Contract: Beschrijving" },
       { id: "contract_priceInc", label: "Contract: Prijs incl. (€)" },
       { id: "contract_vat", label: "Contract: BTW (%)", type: "select", options: ["21", "9", "0"], value: "21" },
       { id: "contract_lastVisit", label: "Contract: Laatste bezoek", type: "date" },
     ], async (vals) => {
-      // Dynamische velden tonen/verbergen
-      if (vals.typeKlant === "Zakelijk") {
-        document.querySelector(`[name="bedrijfsnaam"]`).parentElement.style.display = "block";
-        document.querySelector(`[name="kvk"]`).parentElement.style.display = "block";
-        document.querySelector(`[name="btw"]`).parentElement.style.display = "block";
+      try {
+        // Zakelijke velden tonen indien nodig
+        if (vals.typeKlant === "Zakelijk") {
+          document.querySelector(`[name="bedrijfsnaam"]`).parentElement.style.display = "block";
+          document.querySelector(`[name="kvk"]`).parentElement.style.display = "block";
+          document.querySelector(`[name="btw"]`).parentElement.style.display = "block";
+        }
+
+        // 🔹 Klant opslaan
+        const res = await fetch("/api/clients", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(vals),
+        });
+
+        if (!res.ok) {
+          showToast("Fout bij opslaan van klant", "error");
+          return;
+        }
+
+        const klant = await res.json();
+        showToast(`Klant ${klant.name} aangemaakt`, "success");
+
+        // Klant toevoegen aan lokale lijst
+        clients.push(klant);
+
+        // 🔹 Indien contractvelden ingevuld zijn → contractlijst vernieuwen
+        if (vals.contract_typeService || vals.contract_description) {
+          const cRes = await fetch("/api/contracts");
+          if (cRes.ok) {
+            contracts = await cRes.json();
+            showToast("Contract gekoppeld en bijgewerkt", "success");
+          }
+        }
+
+        renderClients();
+      } catch (err) {
+        console.error("❌ Fout bij opslaan klant:", err);
+        showToast("Onverwachte fout bij opslaan klant", "error");
       }
-
-      // 🔹 1️⃣ Klant opslaan
-      const res = await fetch("/api/clients", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(vals),
-      });
-
-      if (!res.ok) {
-        showToast("Fout bij opslaan van klant", "error");
-        return;
-      }
-
-      const klant = await res.json();
-
-      showToast(`Klant ${klant.name} aangemaakt`, "success");
-      clients.push(klant);
-      renderClients();
     });
-    // Na het opslaan van klant in renderClients()
-const response = await fetch("/api/clients", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify(vals),
-});
-
-const klant = await response.json();
-
-// 🔹 Als er contractvelden zijn ingevuld: haal nieuwe contractenlijst op
-if (vals.contract_typeService || vals.contract_description) {
-  const cRes = await fetch("/api/contracts");
-  if (cRes.ok) {
-    const newContracts = await cRes.json();
-    // Globale lijst updaten
-    contracts = newContracts;
-    showToast("Contract gekoppeld en bijgewerkt", "success");
-  }
 }
 
-showToast(`Klant ${klant.name} aangemaakt`, "success");
-clients.push(klant);
-renderClients();
-}
 
 function openClientDetail(c) {
   openModal(`Klant bewerken – ${c.name}`, [
@@ -617,37 +613,43 @@ function openModal(title, fields, onSave, onDelete) {
 
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
-  overlay.innerHTML = `
-    <div class="modal-card">
-      <h2 class="text-xl font-semibold mb-4">${title}</h2>
-      <form id="modalForm" class="form-grid"></form>
-      <div class="flex justify-end gap-2 mt-6">
-        ${onDelete ? `<button type="button" id="deleteBtn" class="btn btn-warn">Verwijderen</button>` : ""}
-        <button type="button" id="cancelBtn" class="btn">Annuleren</button>
-        <button type="submit" class="btn btn-primary">Opslaan</button>
-      </div>
+
+  const card = document.createElement("div");
+  card.className = "modal-card";
+
+  card.innerHTML = `
+    <h2 class="text-lg font-semibold mb-4">${title}</h2>
+    <form id="modalForm"></form>
+    <div class="flex justify-end gap-2 mt-4">
+      <button type="button" id="delBtn" class="btn btn-warn hidden">Verwijderen</button>
+      <button type="button" id="cancel" class="btn btn-secondary">Annuleren</button>
+      <button type="submit" id="save" class="btn btn-ok">Opslaan</button>
     </div>
   `;
+
+  overlay.appendChild(card);
   document.body.appendChild(overlay);
 
-  const form = overlay.querySelector("#modalForm");
+  const form = card.querySelector("#modalForm");
 
-  // Velden renderen
+  // 🔹 Velden genereren
   fields.forEach(f => {
-    const field = document.createElement("div");
-    field.className = "form-field";
-    if (f.hidden) field.style.display = "none";
+    if (f.hidden) return;
+
+    const div = document.createElement("div");
+    div.className = "form-field";
 
     const label = document.createElement("label");
     label.textContent = f.label;
 
-    // input-element kiezen
     let input;
+
     switch (f.type) {
       case "select":
         input = document.createElement("select");
-        input.className = "input select";
-        (f.options || []).forEach(opt => {
+        input.className = "select";
+        input.name = f.id;
+        f.options.forEach(opt => {
           const o = document.createElement("option");
           o.value = opt;
           o.textContent = opt;
@@ -657,15 +659,18 @@ function openModal(title, fields, onSave, onDelete) {
         break;
 
       case "multiselect":
-        input = document.createElement("select");
-        input.className = "input select";
-        input.multiple = true;
-        (f.options || []).forEach(opt => {
-          const o = document.createElement("option");
-          o.value = opt;
-          o.textContent = opt;
-          if (Array.isArray(f.value) && f.value.includes(opt)) o.selected = true;
-          input.appendChild(o);
+        div.classList.add("space-y-1");
+        f.options.forEach(opt => {
+          const wrap = document.createElement("label");
+          wrap.className = "flex items-center gap-2";
+          const chk = document.createElement("input");
+          chk.type = "checkbox";
+          chk.name = f.id;
+          chk.value = opt;
+          chk.checked = Array.isArray(f.value) && f.value.includes(opt);
+          wrap.appendChild(chk);
+          wrap.append(opt);
+          div.appendChild(wrap);
         });
         break;
 
@@ -673,78 +678,58 @@ function openModal(title, fields, onSave, onDelete) {
         input = document.createElement("input");
         input.type = "date";
         input.className = "input";
+        input.name = f.id;
         if (f.value) input.value = f.value;
+        break;
+
+      case "readonly":
+        input = document.createElement("input");
+        input.className = "input";
+        input.name = f.id;
+        input.readOnly = true;
+        input.value = f.value || "";
         break;
 
       default:
         input = document.createElement("input");
-        input.type = f.type || "text";
         input.className = "input";
-        if (f.value !== undefined) input.value = f.value;
-        if (f.readonly) input.readOnly = true;
+        input.name = f.id;
+        if (f.value) input.value = f.value;
+        break;
     }
 
-    input.name = f.id;
-    field.appendChild(label);
-    field.appendChild(input);
-    form.appendChild(field);
+    if (input) div.appendChild(label);
+    if (input) div.appendChild(input);
+    else div.prepend(label);
+
+    form.appendChild(div);
   });
 
-  // --- Eventlisteners ---
-  overlay.querySelector("#cancelBtn").onclick = () => overlay.remove();
-  if (onDelete) overlay.querySelector("#deleteBtn").onclick = () => { overlay.remove(); onDelete(); };
+  // 🔹 Delete knop tonen indien onDelete aanwezig
+  if (onDelete) card.querySelector("#delBtn").classList.remove("hidden");
 
-  // Dynamische toggle voor "Zakelijk"
-  form.addEventListener("change", (e) => {
-    if (e.target.name === "typeKlant") {
-      const isZakelijk = e.target.value === "Zakelijk";
-      ["bedrijfsnaam", "kvk", "btw"].forEach(id => {
-        const fld = form.querySelector(`[name="${id}"]`)?.parentElement;
-        if (fld) fld.style.display = isZakelijk ? "flex" : "none";
-      });
-    }
-  });
+  // 🔹 Events
+  card.querySelector("#cancel").onclick = () => overlay.remove();
+  card.querySelector("#delBtn").onclick = () => { onDelete(); overlay.remove(); };
 
-  // --- Submit handler ---
-  form.onsubmit = (e) => {
+  form.onsubmit = async (e) => {
     e.preventDefault();
-    const data = {};
-    form.querySelectorAll("input, select, textarea").forEach(inp => {
-      if (inp.multiple) data[inp.name] = Array.from(inp.selectedOptions).map(o => o.value);
-      else data[inp.name] = inp.value;
+
+    const vals = {};
+    fields.forEach(f => {
+      if (f.type === "multiselect") {
+        vals[f.id] = Array.from(form.querySelectorAll(`input[name='${f.id}']:checked`)).map(x => x.value);
+      } else {
+        const inp = form.querySelector(`[name='${f.id}']`);
+        vals[f.id] = inp ? inp.value : null;
+      }
     });
+
     overlay.remove();
-    onSave(data);
+    await onSave(vals);
   };
 }
 
-function confirmDelete(type,onC){
-  if(confirm(`Weet je zeker dat je deze ${type} wilt verwijderen?`))onC();
-}
-function showToast(msg,type="info"){
-  const t=document.createElement("div");
-  t.className=`flex items-center gap-2 px-4 py-2 rounded-lg shadow-lg text-white animate-fadeIn ${type==="success"?"bg-success":type==="error"?"bg-danger":"bg-gray-600"}`;
-  t.innerHTML=`<span>${msg}</span>`;
-  document.getElementById("toastContainer").appendChild(t);
-  setTimeout(()=>{t.classList.add("opacity-0","translate-x-2");setTimeout(()=>t.remove(),300);},2500);
-}
-const s=document.createElement("style");
-s.innerHTML=`@keyframes fadeIn{from{opacity:0;transform:translateY(5px);}to{opacity:1;transform:translateY(0);}}.animate-fadeIn{animation:fadeIn .3s ease;transition:all .3s;}`;
-document.head.appendChild(s);
-function tableHTML(headers, rows) {
-  return `
-    <table class="min-w-full border-collapse table-auto text-sm bg-white dark:bg-gray-900 rounded-lg shadow-sm overflow-hidden">
-      <thead class="bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
-        <tr>${headers.map(h => `<th class="px-4 py-2 text-left">${h}</th>`).join("")}</tr>
-      </thead>
-      <tbody>
-        ${rows.map(r => `
-          <tr class="hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer transition">
-            ${r.map(v => `<td class="px-4 py-2 border-t border-gray-100 dark:border-gray-800">${v ?? "-"}</td>`).join("")}
-          </tr>`).join("")}
-      </tbody>
-    </table>`;
-}
 
 function calcNextVisit(last,freq){
   if(!last)return"-";
