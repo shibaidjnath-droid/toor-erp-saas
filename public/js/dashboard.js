@@ -752,3 +752,22 @@ function applyTheme(t){
   const d=window.matchMedia("(prefers-color-scheme: dark)").matches;
   h.classList.toggle("dark",t==="dark"||(t==="auto"&&d));
 }
+// ---------- 📋 Hulpfunctie voor tabellen ----------
+function tableHTML(headers, rows) {
+  return `
+    <table class="min-w-full border-collapse text-sm">
+      <thead>
+        <tr>
+          ${headers.map(h => `<th class="border-b p-2 text-left font-semibold">${h}</th>`).join("")}
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map(r => `
+          <tr class="hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer">
+            ${r.map(v => `<td class="border-b p-2">${v ?? ""}</td>`).join("")}
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
