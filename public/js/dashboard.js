@@ -619,18 +619,21 @@ function openModal(title, fields, onSave, onDelete) {
 
   card.innerHTML = `
     <h2 class="text-lg font-semibold mb-4">${title}</h2>
-    <form id="modalForm"></form>
+    <form id="modalForm">
     <div class="flex justify-end gap-2 mt-4">
       <button type="button" id="delBtn" class="btn btn-warn hidden">Verwijderen</button>
       <button type="button" id="cancel" class="btn btn-secondary">Annuleren</button>
       <button type="submit" id="save" class="btn btn-ok">Opslaan</button>
     </div>
+    </form>
   `;
 
   overlay.appendChild(card);
   document.body.appendChild(overlay);
 
   const form = card.querySelector("#modalForm");
+const fieldsContainer = form.querySelector("#formFields");
+
 
   // 🔹 Velden genereren
   fields.forEach(f => {
@@ -770,4 +773,9 @@ function tableHTML(headers, rows) {
       </tbody>
     </table>
   `;
+}
+// ---------- 🗑️ Bevestigingsdialoog ----------
+function confirmDelete(typeLabel, onConfirm) {
+  const ok = confirm(`Weet je zeker dat je deze ${typeLabel} wilt verwijderen?`);
+  if (ok) onConfirm();
 }
