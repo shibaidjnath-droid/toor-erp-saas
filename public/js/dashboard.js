@@ -608,7 +608,6 @@ function addItem(lbl,key){
 
 // ---------- Helpers ----------
 function openModal(title, fields, onSave, onDelete) {
-  // verwijder oude overlay als die er is
   document.querySelectorAll(".modal-overlay").forEach(el => el.remove());
 
   const overlay = document.createElement("div");
@@ -619,12 +618,13 @@ function openModal(title, fields, onSave, onDelete) {
 
   card.innerHTML = `
     <h2 class="text-lg font-semibold mb-4">${title}</h2>
-    <form id="modalForm">
-    <div class="flex justify-end gap-2 mt-4">
-      <button type="button" id="delBtn" class="btn btn-warn hidden">Verwijderen</button>
-      <button type="button" id="cancel" class="btn btn-secondary">Annuleren</button>
-      <button type="submit" id="save" class="btn btn-ok">Opslaan</button>
-    </div>
+    <form id="modalForm" class="flex flex-col">
+      <div id="formFields" class="flex-1 overflow-y-auto"></div>
+      <div class="flex justify-end gap-2 mt-4 pt-2 border-t border-gray-200 dark:border-gray-700">
+        <button type="button" id="delBtn" class="btn btn-warn hidden">Verwijderen</button>
+        <button type="button" id="cancel" class="btn btn-secondary">Annuleren</button>
+        <button type="submit" id="save" class="btn btn-ok">Opslaan</button>
+      </div>
     </form>
   `;
 
@@ -632,19 +632,15 @@ function openModal(title, fields, onSave, onDelete) {
   document.body.appendChild(overlay);
 
   const form = card.querySelector("#modalForm");
-const fieldsContainer = form.querySelector("#formFields");
+  const fieldsContainer = form.querySelector("#formFields");
 
-
-  // 🔹 Velden genereren
+  // Velden opbouwen
   fields.forEach(f => {
     if (f.hidden) return;
-
     const div = document.createElement("div");
     div.className = "form-field";
-
     const label = document.createElement("label");
     label.textContent = f.label;
-
     let input;
 
     switch (f.type) {
@@ -701,19 +697,25 @@ const fieldsContainer = form.querySelector("#formFields");
         break;
     }
 
-    if (input) div.appendChild(label);
-    if (input) div.appendChild(input);
-    else div.prepend(label);
+    if (input) {
+      div.appendChild(label);
+      div.appendChild(input);
+    } else {
+      div.prepend(label);
+    }
 
-    form.appendChild(div);
+    fieldsContainer.appendChild(div);
   });
 
-  // 🔹 Delete knop tonen indien onDelete aanwezig
   if (onDelete) card.querySelector("#delBtn").classList.remove("hidden");
 
-  // 🔹 Events
   card.querySelector("#cancel").onclick = () => overlay.remove();
-  card.querySelector("#delBtn").onclick = () => { onDelete(); overlay.remove(); };
+  card.querySelector("#delBtn").onclick = () => {
+    confirmDelete("record", () => {
+      onDelete();
+      overlay.remove();
+    });
+  };
 
   form.onsubmit = async (e) => {
     e.preventDefault();
@@ -728,33 +730,11 @@ const fieldsContainer = form.querySelector("#formFields");
       }
     });
 
-    overlay.remove();
     await onSave(vals);
+    overlay.remove();
   };
 }
 
-
-function calcNextVisit(last,freq){
-  if(!last)return"-";
-  const d=new Date(last);const f=freq.toLowerCase();
-  const days=f.includes("week")?7:f.includes("kwart")?90:f.includes("half")?180:f.includes("jaar")?365:30;
-  d.setDate(d.getDate()+days);
-  return d.toISOString().split("T")[0];
-}
-function setupThemeButtons(){
-  const th=localStorage.getItem("theme")||"auto";applyTheme(th);
-  document.querySelectorAll(".theme-btn").forEach(b=>{
-    b.addEventListener("click",()=>{
-      const s=b.dataset.theme;localStorage.setItem("theme",s);applyTheme(s);
-      showToast(`Thema gewijzigd naar ${s}`,"info");
-    });
-  });
-}
-function applyTheme(t){
-  const h=document.documentElement;h.dataset.theme=t;
-  const d=window.matchMedia("(prefers-color-scheme: dark)").matches;
-  h.classList.toggle("dark",t==="dark"||(t==="auto"&&d));
-}
 // ---------- 📋 Hulpfunctie voor tabellen ----------
 function tableHTML(headers, rows) {
   return `
@@ -778,4 +758,17 @@ function tableHTML(headers, rows) {
 function confirmDelete(typeLabel, onConfirm) {
   const ok = confirm(`Weet je zeker dat je deze ${typeLabel} wilt verwijderen?`);
   if (ok) onConfirm();
+}
+// ---------- ✅ Toast helper ----------
+function showToast(message, type = "info") {
+  const colors = {
+    info: "bg-blue-600",
+    success: "bg-green-600",
+    error: "bg-red-600",
+  };
+  const toast = document.createElement("div");
+  toast.className = `${colors[type] || colors.info} fixed bottom-4 right-4 text-white px-4 py-2 rounded shadow-lg z-50`;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
 }
