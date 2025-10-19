@@ -1,11 +1,9 @@
 // routes/contracts.js
-import express from 'express';
-import { v4 as uuidv4 } from 'uuid';
-import { contacts } from './contacts.js';
+import express from "express";
+import { v4 as uuidv4 } from "uuid";
+import { pool } from "../db.js";
 
 const router = express.Router();
-export let contracts = []; // ✅ explicit named export
-
 
 // Geldige frequenties
 const allowedFreq = [
@@ -34,15 +32,25 @@ function computeNextVisit(lastVisit, frequency) {
 /** ✅ GET – alle contracts */
 router.get("/", async (_req, res) => {
   try {
-    const { rows } = await pool.query(
-      `SELECT c.*, ct.name AS client_name
-       FROM contracts c
-       LEFT JOIN contacts ct ON c.contact_id = ct.id
-       ORDER BY c.created_at DESC`
-    );
-    res.json(rows);
+    const { rows } = await pool.query(`
+      SELECT c.*, ct.name AS client_name
+      FROM contracts c
+      LEFT JOIN contacts ct ON c.contact_id = ct.id
+      ORDER BY c.created_at DESC
+    `);
+
+    // JSON parse type_service als het in stringvorm staat
+    const parsed = rows.map(r => ({
+      ...r,
+      type_service:
+        typeof r.type_service === "string"
+          ? JSON.parse(r.type_service)
+          : r.type_service
+    }));
+
+    res.json(parsed);
   } catch (err) {
-    console.error("DB error:", err);
+    console.error("❌ DB error:", err.message);
     res.status(500).json({ error: "Database error" });
   }
 });
@@ -57,10 +65,16 @@ router.get("/:id", async (req, res) => {
        WHERE c.id = $1`,
       [req.params.id]
     );
-    if (!rows.length) return res.status(404).json({ error: "Contract niet gevonden" });
-    res.json(rows[0]);
+    if (!rows.length)
+      return res.status(404).json({ error: "Contract niet gevonden" });
+
+    const r = rows[0];
+    if (typeof r.type_service === "string")
+      r.type_service = JSON.parse(r.type_service);
+
+    res.json(r);
   } catch (err) {
-    console.error("DB error:", err);
+    console.error("❌ DB error:", err.message);
     res.status(500).json({ error: "Database error" });
   }
 });
@@ -74,37 +88,43 @@ router.post("/", async (req, res) => {
       lastVisit
     } = req.body;
 
-    if (!clientId) return res.status(400).json({ error: "clientId is verplicht" });
+    if (!clientId)
+      return res.status(400).json({ error: "clientId is verplicht" });
 
-    // Check of client bestaat
     const clientCheck = await pool.query("SELECT id FROM contacts WHERE id=$1", [clientId]);
     if (!clientCheck.rows.length)
       return res.status(404).json({ error: "Client niet gevonden" });
 
-    // Berekeningen
     const freq = allowedFreq.includes(frequency) ? frequency : "Maand";
     const ex = isNaN(parseFloat(priceEx)) ? 0 : parseFloat(priceEx);
     const vat = isNaN(parseFloat(vatPct)) ? 21 : parseFloat(vatPct);
     const inc = +(ex * (1 + vat / 100)).toFixed(2);
     const nextVisit = computeNextVisit(lastVisit, freq);
 
-    // Insert
+    const id = uuidv4();
+
     const { rows } = await pool.query(
       `INSERT INTO contracts (
-        contact_id, frequency, description, payment_notes,
+        id, contact_id, frequency, description, payment_notes,
         price_ex, price_inc, vat_pct, grote_beurt, type_service,
-        last_visit, next_visit, active
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true)
+        last_visit, next_visit, active, created_at
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true,now())
       RETURNING *`,
       [
-        clientId, freq, description || "", paymentNotes || "",
-        ex, inc, vat, !!groteBeurt, typeService, lastVisit || null, nextVisit
+        id, clientId, freq, description || "", paymentNotes || "",
+        ex, inc, vat, !!groteBeurt, JSON.stringify(typeService),
+        lastVisit || null, nextVisit
       ]
     );
 
-    res.status(201).json(rows[0]);
+    const r = rows[0];
+    if (typeof r.type_service === "string")
+      r.type_service = JSON.parse(r.type_service);
+
+    res.status(201).json(r);
   } catch (err) {
-    console.error("DB insert error:", err);
+    console.error("❌ DB insert error:", err.message);
     res.status(500).json({ error: "Database insert error" });
   }
 });
@@ -118,13 +138,13 @@ router.put("/:id", async (req, res) => {
       lastVisit, active
     } = req.body;
 
-    // Berekeningen
     const freq = allowedFreq.includes(frequency) ? frequency : undefined;
     const ex = priceEx !== undefined ? parseFloat(priceEx) : undefined;
     const vat = vatPct !== undefined ? parseFloat(vatPct) : undefined;
-    const nextVisit = (lastVisit || freq)
-      ? computeNextVisit(lastVisit, freq || "Maand")
-      : undefined;
+    const nextVisit =
+      (lastVisit || freq)
+        ? computeNextVisit(lastVisit, freq || "Maand")
+        : undefined;
 
     const { rows } = await pool.query(
       `UPDATE contracts
@@ -144,13 +164,22 @@ router.put("/:id", async (req, res) => {
            active = COALESCE($10, active)
        WHERE id = $11
        RETURNING *`,
-      [freq, description, paymentNotes, ex, vat, groteBeurt, typeService, lastVisit, nextVisit, active, req.params.id]
+      [
+        freq, description, paymentNotes, ex, vat, groteBeurt,
+        JSON.stringify(typeService), lastVisit, nextVisit, active, req.params.id
+      ]
     );
 
-    if (!rows.length) return res.status(404).json({ error: "Contract niet gevonden" });
-    res.json(rows[0]);
+    if (!rows.length)
+      return res.status(404).json({ error: "Contract niet gevonden" });
+
+    const r = rows[0];
+    if (typeof r.type_service === "string")
+      r.type_service = JSON.parse(r.type_service);
+
+    res.json(r);
   } catch (err) {
-    console.error("DB update error:", err);
+    console.error("❌ DB update error:", err.message);
     res.status(500).json({ error: "Database update error" });
   }
 });
@@ -162,7 +191,8 @@ router.patch("/:id/visit", async (req, res) => {
     const when = date ? new Date(date).toISOString() : new Date().toISOString();
 
     const contract = await pool.query("SELECT frequency FROM contracts WHERE id=$1", [req.params.id]);
-    if (!contract.rows.length) return res.status(404).json({ error: "Contract niet gevonden" });
+    if (!contract.rows.length)
+      return res.status(404).json({ error: "Contract niet gevonden" });
 
     const nextVisit = computeNextVisit(when, contract.rows[0].frequency);
 
@@ -175,7 +205,7 @@ router.patch("/:id/visit", async (req, res) => {
 
     res.json(rows[0]);
   } catch (err) {
-    console.error("Visit update error:", err);
+    console.error("❌ Visit update error:", err.message);
     res.status(500).json({ error: "Update visit failed" });
   }
 });
@@ -184,16 +214,19 @@ router.patch("/:id/visit", async (req, res) => {
 router.patch("/:id/override", async (req, res) => {
   try {
     const { nextVisit } = req.body;
-    if (!nextVisit) return res.status(400).json({ error: "nextVisit verplicht (ISO string)" });
+    if (!nextVisit)
+      return res.status(400).json({ error: "nextVisit verplicht (ISO string)" });
 
     const { rows } = await pool.query(
       `UPDATE contracts SET next_visit=$1 WHERE id=$2 RETURNING *`,
       [new Date(nextVisit).toISOString(), req.params.id]
     );
-    if (!rows.length) return res.status(404).json({ error: "Contract niet gevonden" });
+    if (!rows.length)
+      return res.status(404).json({ error: "Contract niet gevonden" });
+
     res.json(rows[0]);
   } catch (err) {
-    console.error("Override error:", err);
+    console.error("❌ Override error:", err.message);
     res.status(500).json({ error: "Override update failed" });
   }
 });

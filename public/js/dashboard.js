@@ -337,58 +337,123 @@ function openClientDetail(c) {
 
 
 // 📄 Contracten
-function renderContracts(){
-  const list=document.getElementById("contractsList");
-  const rows=contracts.map(c=>{
-    const client=clients.find(cl=>cl.id===c.clientId)?.name||"Onbekend";
-    const next=calcNextVisit(c.lastVisit,c.frequency);
-    return [client,c.typeService.join(", "),c.frequency,
-      c.description,`€${c.price.toFixed(2)}`,`${c.vat}%`,c.lastVisit,next];
-  });
-  list.innerHTML=tableHTML(["Klant","Type service","Frequentie","Beschrijving","Prijs incl.","BTW %","Laatste bezoek","Volgende bezoek"],rows);
-  list.querySelectorAll("tbody tr").forEach((tr,i)=>
-    tr.addEventListener("click",()=>openContractDetail(contracts[i])));
-  document.getElementById("newContractBtn").onclick=()=>openModal("Nieuw Contract",[
-    {id:"client",label:"Klant",type:"select",options:clients.map(c=>c.name)},
-    {id:"typeService",label:"Type service",type:"multiselect",options:settings.typeServices},
-    {id:"frequency",label:"Frequentie",type:"select",options:settings.frequencies},
-    {id:"description",label:"Beschrijving"},{id:"price",label:"Prijs incl."},
-    {id:"vat",label:"BTW %",type:"select",options:["21","9","0"]},
-    {id:"lastVisit",label:"Laatste bezoek",type:"date"},
-  ],vals=>{
-    const client=clients.find(c=>c.name===vals.client);
-    contracts.push({
-      id:Date.now(),clientId:client?.id,typeService:vals.typeService,
-      frequency:vals.frequency,description:vals.description,
-      price:parseFloat(vals.price||0),vat:parseInt(vals.vat),lastVisit:vals.lastVisit
+function renderContracts() {
+  const list = document.getElementById("contractsList");
+
+  const rows = contracts.map(c => [
+    c.client_name || "-",                                       // 🔹 rechtstreeks uit API
+    Array.isArray(c.type_service) ? c.type_service.join(", ") : c.type_service || "-",
+    c.frequency || "-",
+    c.description || "-",
+    c.price_inc ? `€${Number(c.price_inc).toFixed(2)}` : "€0.00",
+    c.vat_pct ? `${c.vat_pct}%` : "-",
+    c.last_visit ? c.last_visit.split("T")[0] : "-",
+    c.next_visit ? c.next_visit.split("T")[0] : "-"
+  ]);
+
+  list.innerHTML = tableHTML(
+    ["Klant", "Type service", "Frequentie", "Beschrijving", "Prijs incl.", "BTW %", "Laatste bezoek", "Volgende bezoek"],
+    rows
+  );
+
+  // 🔹 Klik op rij = open contractdetail
+  list.querySelectorAll("tbody tr").forEach((tr, i) =>
+    tr.addEventListener("click", () => openContractDetail(contracts[i]))
+  );
+
+  // 🔹 Nieuw contract
+  document.getElementById("newContractBtn").onclick = () =>
+    openModal("Nieuw Contract", [
+      { id: "clientId", label: "Klant", type: "select", options: clients.map(c => c.name) },
+      { id: "typeService", label: "Type service", type: "multiselect", options: settings.typeServices },
+      { id: "frequency", label: "Frequentie", type: "select", options: settings.frequencies },
+      { id: "description", label: "Beschrijving" },
+      { id: "priceEx", label: "Prijs excl. (€)" },
+      { id: "vatPct", label: "BTW (%)", type: "select", options: ["21", "9", "0"], value: "21" },
+      { id: "lastVisit", label: "Laatste bezoek", type: "date" },
+    ], async (vals) => {
+      try {
+        // zoek contactId van geselecteerde klant
+        const client = clients.find(c => c.name === vals.clientId);
+        if (!client) return showToast("Selecteer een bestaande klant", "error");
+
+        const res = await fetch("/api/contracts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...vals, clientId: client.id }),
+        });
+
+        if (!res.ok) {
+          showToast("Fout bij opslaan contract", "error");
+          return;
+        }
+
+        const contract = await res.json();
+        contracts.unshift(contract); // bovenaan tonen
+        showToast("Contract toegevoegd", "success");
+        renderContracts();
+      } catch (err) {
+        console.error("❌ Fout bij opslaan contract:", err);
+        showToast("Onverwachte fout bij opslaan contract", "error");
+      }
     });
-    showToast("Contract toegevoegd","success");renderContracts();
-  });
 }
 
-function openContractDetail(c){
-  const client=clients.find(x=>x.id===c.clientId);
-  openModal(`Contract bewerken – ${client?.name||"Onbekend"}`,[
-    {id:"client",label:"Klant",type:"select",options:clients.map(c=>c.name),value:client?.name},
-    {id:"typeService",label:"Type service",type:"multiselect",options:settings.typeServices,value:c.typeService},
-    {id:"frequency",label:"Frequentie",type:"select",options:settings.frequencies,value:c.frequency},
-    {id:"description",label:"Beschrijving",value:c.description},
-    {id:"price",label:"Prijs incl.",value:c.price},
-    {id:"vat",label:"BTW %",type:"select",options:["21","9","0"],value:c.vat},
-    {id:"lastVisit",label:"Laatste bezoek",type:"date",value:c.lastVisit},
-  ],vals=>{
-    Object.assign(c,{
-      clientId:clients.find(x=>x.name===vals.client)?.id,
-      typeService:vals.typeService,frequency:vals.frequency,
-      description:vals.description,price:parseFloat(vals.price||0),
-      vat:parseInt(vals.vat),lastVisit:vals.lastVisit
-    });
-    showToast("Contract opgeslagen","success");renderContracts();
-  },()=>confirmDelete("contract",()=>{
-    contracts=contracts.filter(x=>x.id!==c.id);
-    renderContracts();showToast("Contract verwijderd","success");
+
+function openContractDetail(c) {
+  openModal(`Contract bewerken – ${c.client_name || "-"}`, [
+    { id: "frequency", label: "Frequentie", type: "select", options: settings.frequencies, value: c.frequency },
+    { id: "description", label: "Beschrijving", value: c.description },
+    { id: "priceEx", label: "Prijs excl. (€)", value: c.price_ex },
+    { id: "vatPct", label: "BTW (%)", type: "select", options: ["21", "9", "0"], value: c.vat_pct },
+    { id: "lastVisit", label: "Laatste bezoek", type: "date", value: c.last_visit ? c.last_visit.split("T")[0] : "" },
+    { id: "typeService", label: "Type service", type: "multiselect", options: settings.typeServices, value: c.type_service },
+  ], async (vals) => {
+    try {
+      const res = await fetch(`/api/contracts/${c.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          frequency: vals.frequency,
+          description: vals.description,
+          priceEx: vals.priceEx,
+          vatPct: vals.vatPct,
+          lastVisit: vals.lastVisit,
+          typeService: vals.typeService,
+        }),
+      });
+
+      if (!res.ok) {
+        showToast("Fout bij opslaan contract", "error");
+        return;
+      }
+
+      const updated = await res.json();
+      // vervang lokaal record zodat lijst direct ververst
+      Object.assign(c, updated);
+      showToast("Contract opgeslagen", "success");
+      renderContracts();
+    } catch (err) {
+      console.error("❌ Fout bij opslaan contract:", err);
+      showToast("Onverwachte fout bij opslaan contract", "error");
+    }
+  }, () => confirmDelete("contract", async () => {
+    try {
+      const res = await fetch(`/api/contracts/${c.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        showToast("Fout bij verwijderen contract", "error");
+        return;
+      }
+      contracts = contracts.filter(x => x.id !== c.id);
+      showToast("Contract verwijderd", "success");
+      renderContracts();
+    } catch (err) {
+      console.error("❌ Fout bij verwijderen contract:", err);
+      showToast("Onverwachte fout bij verwijderen contract", "error");
+    }
   }));
 }
+
 
 // ---------- Planning ----------
 function renderPlanning(){
@@ -605,6 +670,24 @@ function addItem(lbl,key){
   if(!v)return showToast("Vul een waarde in","error");
   settings[key].push(v);renderSettings();showToast(`${lbl} toegevoegd`,"success");
 }
+// ---------- 🎨 Thema ----------
+function setupThemeButtons() {
+  const themeButtons = document.querySelectorAll("#themeLight, #themeDark");
+  themeButtons.forEach(btn => {
+    btn.addEventListener("click", () => {
+      const isDark = btn.id === "themeDark";
+      document.documentElement.classList.toggle("dark", isDark);
+      localStorage.setItem("theme", isDark ? "dark" : "light");
+      showToast(`Thema gewijzigd naar ${isDark ? "Donker" : "Licht"}`, "info");
+    });
+  });
+
+  // Laad opgeslagen voorkeur
+  const saved = localStorage.getItem("theme");
+  if (saved) {
+    document.documentElement.classList.toggle("dark", saved === "dark");
+  }
+}
 
 // ---------- Helpers ----------
 function openModal(title, fields, onSave, onDelete) {
@@ -733,6 +816,24 @@ function openModal(title, fields, onSave, onDelete) {
     await onSave(vals);
     overlay.remove();
   };
+}
+// ---------- 🗓️ Bereken volgende bezoekdatum ----------
+function calcNextVisit(lastVisit, frequency) {
+  if (!lastVisit) return "-";
+  const date = new Date(lastVisit);
+  const freq = frequency.toLowerCase();
+
+  let days = 30;
+  if (freq.includes("week")) days = 7;
+  if (freq.includes("3") && freq.includes("week")) days = 21;
+  if (freq.includes("4") && freq.includes("week")) days = 28;
+  if (freq.includes("6") && freq.includes("week")) days = 42;
+  if (freq.includes("8") && freq.includes("week")) days = 56;
+  if (freq.includes("12") && freq.includes("week")) days = 84;
+  if (freq.includes("jaar")) days = 365;
+
+  date.setDate(date.getDate() + days);
+  return date.toISOString().split("T")[0];
 }
 
 // ---------- 📋 Hulpfunctie voor tabellen ----------
