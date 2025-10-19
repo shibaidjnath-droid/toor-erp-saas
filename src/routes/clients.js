@@ -115,10 +115,12 @@ router.post("/", async (req, res) => {
       email,
       contractCreated: !!newContract,
     });
-  } catch (err) {
+    } catch (err) {
     console.error("❌ Fout bij toevoegen klant:", err.message);
+    console.error("❌ Stacktrace:", err.stack);
     return res.status(500).json({ error: "Databasefout bij toevoegen klant" });
   }
+
 });
 
 // ✅ PUT klant bijwerken
@@ -156,10 +158,12 @@ router.put("/:id", async (req, res) => {
     );
 
     return res.json(rows[0]);
-  } catch (err) {
+    } catch (err) {
     console.error("❌ Fout bij update klant:", err.message);
+    console.error("❌ Stacktrace:", err.stack);
     return res.status(500).json({ error: "Databasefout bij update" });
   }
+
 });
 
 // ✅ PATCH: status toggelen
