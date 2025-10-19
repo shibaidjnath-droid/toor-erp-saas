@@ -36,40 +36,36 @@ router.get("/:id", async (req, res) => {
 
 // ✅ POST nieuwe klant (optioneel met contract)
 router.post("/", async (req, res) => {
-  const {
-    name, email, phone, address, houseNumber, city,
-    typeKlant, bedrijfsnaam, kvk, btw, verzendMethode,
-    status, contract_typeService, contract_frequency,
-    contract_description, contract_priceInc, contract_vat,
-    contract_lastVisit
-  } = req.body;
-
-  if (!name || !email)
-    return res.status(400).json({ error: "Naam en e-mail zijn verplicht" });
-
-  const clientId = uuidv4();
-
   try {
+    const {
+      name, email, phone, address, houseNumber, city,
+      typeKlant, bedrijfsnaam, kvk, btw, verzendMethode,
+      status, contract_typeService, contract_frequency,
+      contract_description, contract_priceInc, contract_vat,
+      contract_lastVisit
+    } = req.body;
+
+    if (!name || !email)
+      return res.status(400).json({ error: "Naam en e-mail zijn verplicht" });
+
+    const clientId = uuidv4();
+
     // ✅ klant opslaan
     await pool.query(
-  `INSERT INTO contracts
-   (id, contact_id, type_service, frequency, description, price_ex, price_inc, vat_pct, last_visit, next_visit, active, created_at)
-   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now())`,
-  [
-    newContract.id,
-    newContract.contact_id,
-    newContract.type_service,  // ✅ gewoon de array doorgeven
-    newContract.frequency,
-    newContract.description,
-    newContract.price_ex,
-    newContract.price_inc,
-    newContract.vat_pct,
-    newContract.last_visit,
-    newContract.next_visit,
-    newContract.active
-  ]
-);
-
+      `INSERT INTO contacts
+       (id, name, email, phone, address, house_number, city, type_klant,
+        bedrijfsnaam, kvk, btw, verzend_methode, status, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now())`,
+      [
+        clientId, name, email, phone || "", address || "", houseNumber || "", city || "",
+        ["Particulier", "Zakelijk"].includes(typeKlant) ? typeKlant : "Particulier",
+        typeKlant === "Zakelijk" ? (bedrijfsnaam || "") : "",
+        typeKlant === "Zakelijk" ? (kvk || "") : "",
+        typeKlant === "Zakelijk" ? (btw || "") : "",
+        ["Whatsapp", "Email"].includes(verzendMethode) ? verzendMethode : "Email",
+        status || "Active",
+      ]
+    );
 
     // ✅ contract aanmaken als velden aanwezig zijn
     let newContract = null;
@@ -100,11 +96,12 @@ router.post("/", async (req, res) => {
 
       await pool.query(
         `INSERT INTO contracts
-         (id, contact_id, type_service, frequency, description, price_ex, price_inc, vat_pct, last_visit, next_visit, active, created_at)
+         (id, contact_id, type_service, frequency, description, price_ex, price_inc,
+          vat_pct, last_visit, next_visit, active, created_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now())`,
         [
           newContract.id, newContract.contact_id,
-          JSON.stringify(newContract.type_service),
+          newContract.type_service, // ✅ geen JSON.stringify()
           newContract.frequency, newContract.description,
           newContract.price_ex, newContract.price_inc,
           newContract.vat_pct, newContract.last_visit,
@@ -113,19 +110,21 @@ router.post("/", async (req, res) => {
       );
     }
 
+    // ✅ respons buiten de if, binnen de try
     return res.status(201).json({
       id: clientId,
       name,
       email,
       contractCreated: !!newContract,
     });
-    } catch (err) {
+
+  } catch (err) {
     console.error("❌ Fout bij toevoegen klant:", err.message);
     console.error("❌ Stacktrace:", err.stack);
     return res.status(500).json({ error: "Databasefout bij toevoegen klant" });
   }
-
 });
+
 
 // ✅ PUT klant bijwerken
 router.put("/:id", async (req, res) => {
