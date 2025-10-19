@@ -52,20 +52,24 @@ router.post("/", async (req, res) => {
   try {
     // ✅ klant opslaan
     await pool.query(
-      `INSERT INTO contacts
-       (id, name, email, phone, address, house_number, city, type_klant,
-        bedrijfsnaam, kvk, btw, verzend_methode, status, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now())`,
-      [
-        clientId, name, email, phone || "", address || "", houseNumber || "", city || "",
-        ["Particulier", "Zakelijk"].includes(typeKlant) ? typeKlant : "Particulier",
-        typeKlant === "Zakelijk" ? (bedrijfsnaam || "") : "",
-        typeKlant === "Zakelijk" ? (kvk || "") : "",
-        typeKlant === "Zakelijk" ? (btw || "") : "",
-        ["Whatsapp", "Email"].includes(verzendMethode) ? verzendMethode : "Email",
-        status || "Active",
-      ]
-    );
+  `INSERT INTO contracts
+   (id, contact_id, type_service, frequency, description, price_ex, price_inc, vat_pct, last_visit, next_visit, active, created_at)
+   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now())`,
+  [
+    newContract.id,
+    newContract.contact_id,
+    newContract.type_service,  // ✅ gewoon de array doorgeven
+    newContract.frequency,
+    newContract.description,
+    newContract.price_ex,
+    newContract.price_inc,
+    newContract.vat_pct,
+    newContract.last_visit,
+    newContract.next_visit,
+    newContract.active
+  ]
+);
+
 
     // ✅ contract aanmaken als velden aanwezig zijn
     let newContract = null;
