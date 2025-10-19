@@ -790,6 +790,25 @@ function openModal(title, fields, onSave, onDelete) {
     fieldsContainer.appendChild(div);
   });
 
+    // 🔹 Toon/verberg bedrijfsvelden bij typeKlant = Zakelijk
+  const typeSelect = form.querySelector("[name='typeKlant']");
+  if (typeSelect) {
+    const toggleBusinessFields = () => {
+      const isBusiness = typeSelect.value === "Zakelijk";
+      ["bedrijfsnaam", "kvk", "btw"].forEach(id => {
+        const field = form.querySelector(`[name='${id}']`)?.closest(".form-field");
+        if (field) field.style.display = isBusiness ? "block" : "none";
+      });
+    };
+
+    // ⚙️ Bij laden direct uitvoeren op basis van bestaande waarde
+    requestAnimationFrame(toggleBusinessFields);
+
+    // 🔁 Eventlistener bij wisselen
+    typeSelect.addEventListener("change", toggleBusinessFields);
+  }
+
+
   if (onDelete) card.querySelector("#delBtn").classList.remove("hidden");
 
   card.querySelector("#cancel").onclick = () => overlay.remove();
@@ -817,6 +836,7 @@ function openModal(title, fields, onSave, onDelete) {
     overlay.remove();
   };
 }
+
 // ---------- 🗓️ Bereken volgende bezoekdatum ----------
 function calcNextVisit(lastVisit, frequency) {
   if (!lastVisit) return "-";
