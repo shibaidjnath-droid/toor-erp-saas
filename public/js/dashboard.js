@@ -252,12 +252,6 @@ async function renderClients() {
       { id: "contract_lastVisit", label: "Contract: Laatste bezoek", type: "date" },
     ], async (vals) => {
       try {
-        // Zakelijke velden tonen indien nodig
-        if (vals.typeKlant === "Zakelijk") {
-          document.querySelector(`[name="bedrijfsnaam"]`).parentElement.style.display = "block";
-          document.querySelector(`[name="kvk"]`).parentElement.style.display = "block";
-          document.querySelector(`[name="btw"]`).parentElement.style.display = "block";
-        }
 
         // 🔹 Klant opslaan
         const res = await fetch("/api/clients", {
@@ -788,6 +782,10 @@ function openModal(title, fields, onSave, onDelete) {
     }
 
     fieldsContainer.appendChild(div);
+    if (f.hidden) {
+  div.style.display = "none";
+}
+
   });
 
     // 🔹 Toon/verberg bedrijfsvelden bij typeKlant = Zakelijk
