@@ -827,26 +827,28 @@ if (onDelete) {
   delBtn.onclick = null;
 }
 
+// 🔹 Annuleren sluit modal
 card.querySelector("#cancel").onclick = () => overlay.remove();
 
+// 🔹 Opslaan verwerkt formulier
+form.onsubmit = async (e) => {
+  e.preventDefault();
 
+  const vals = {};
+  fields.forEach(f => {
+    if (f.type === "multiselect") {
+      vals[f.id] = Array.from(
+        form.querySelectorAll(`input[name='${f.id}']:checked`)
+      ).map(x => x.value);
+    } else {
+      const inp = form.querySelector(`[name='${f.id}']`);
+      vals[f.id] = inp ? inp.value : null;
+    }
+  });
 
-  form.onsubmit = async (e) => {
-    e.preventDefault();
-
-    const vals = {};
-    fields.forEach(f => {
-      if (f.type === "multiselect") {
-        vals[f.id] = Array.from(form.querySelectorAll(`input[name='${f.id}']:checked`)).map(x => x.value);
-      } else {
-        const inp = form.querySelector(`[name='${f.id}']`);
-        vals[f.id] = inp ? inp.value : null;
-      }
-    });
-
-    await onSave(vals);
-    overlay.remove();
-  };
+  await onSave(vals);
+  overlay.remove();
+};
 
 
 // ---------- 🗓️ Bereken volgende bezoekdatum ----------
