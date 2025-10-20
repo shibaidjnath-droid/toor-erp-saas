@@ -713,9 +713,9 @@ function openModal(title, fields, onSave, onDelete) {
 
   // Velden opbouwen
   fields.forEach(f => {
-    if (f.hidden) return;
     const div = document.createElement("div");
     div.className = "form-field";
+      if (f.hidden) div.style.display = "none";
     const label = document.createElement("label");
     label.textContent = f.label;
     let input;
@@ -789,15 +789,20 @@ function openModal(title, fields, onSave, onDelete) {
   });
 
     // 🔹 Toon/verberg bedrijfsvelden bij typeKlant = Zakelijk
-  const typeSelect = form.querySelector("[name='typeKlant']");
-  if (typeSelect) {
-    const toggleBusinessFields = () => {
-      const isBusiness = typeSelect.value === "Zakelijk";
-      ["bedrijfsnaam", "kvk", "btw"].forEach(id => {
-        const field = form.querySelector(`[name='${id}']`)?.closest(".form-field");
-        if (field) field.style.display = isBusiness ? "block" : "none";
-      });
-    };
+ const typeSelect = form.querySelector("[name='typeKlant']");
+if (typeSelect) {
+  const toggleBusinessFields = () => {
+    const val = (typeSelect.value || "").toLowerCase();
+    const isBusiness = val === "zakelijk";
+    ["bedrijfsnaam", "kvk", "btw"].forEach(id => {
+      const field = form.querySelector(`[name='${id}']`)?.closest(".form-field");
+      if (field) field.style.display = isBusiness ? "block" : "none";
+    });
+  };
+
+  toggleBusinessFields(); // bij openen
+  typeSelect.addEventListener("change", toggleBusinessFields);
+}
 
     // ⚙️ Bij laden direct uitvoeren op basis van bestaande waarde
     requestAnimationFrame(toggleBusinessFields);
@@ -833,7 +838,7 @@ function openModal(title, fields, onSave, onDelete) {
     await onSave(vals);
     overlay.remove();
   };
-}
+
 
 // ---------- 🗓️ Bereken volgende bezoekdatum ----------
 function calcNextVisit(lastVisit, frequency) {
