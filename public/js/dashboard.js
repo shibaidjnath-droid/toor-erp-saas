@@ -812,15 +812,24 @@ if (typeSelect) {
   }
 
 
-  if (onDelete) card.querySelector("#delBtn").classList.remove("hidden");
-
-  card.querySelector("#cancel").onclick = () => overlay.remove();
-  card.querySelector("#delBtn").onclick = () => {
+ // 🔹 Alleen tonen en activeren als onDelete bestaat
+const delBtn = card.querySelector("#delBtn");
+if (onDelete) {
+  delBtn.classList.remove("hidden");
+  delBtn.onclick = () => {
     confirmDelete("record", () => {
       onDelete();
       overlay.remove();
     });
   };
+} else {
+  delBtn.classList.add("hidden");
+  delBtn.onclick = null;
+}
+
+card.querySelector("#cancel").onclick = () => overlay.remove();
+
+
 
   form.onsubmit = async (e) => {
     e.preventDefault();
