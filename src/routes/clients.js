@@ -63,6 +63,7 @@ router.post("/", async (req, res) => {
         typeKlant === "Zakelijk" ? (kvk || "") : "",
         typeKlant === "Zakelijk" ? (btw || "") : "",
         ["Whatsapp", "Email"].includes(verzendMethode) ? verzendMethode : "Email",
+        tag || null,
         status || "Active",
       ]
     );
