@@ -715,7 +715,7 @@ function openModal(title, fields, onSave, onDelete) {
   fields.forEach(f => {
     const div = document.createElement("div");
     div.className = "form-field";
-      if (f.hidden) div.style.display = "none";
+    if (f.hidden) div.style.display = "none";
     const label = document.createElement("label");
     label.textContent = f.label;
     let input;
@@ -782,74 +782,62 @@ function openModal(title, fields, onSave, onDelete) {
     }
 
     fieldsContainer.appendChild(div);
-    if (f.hidden) {
-  div.style.display = "none";
-}
-
   });
 
-    // 🔹 Toon/verberg bedrijfsvelden bij typeKlant = Zakelijk
- const typeSelect = form.querySelector("[name='typeKlant']");
-if (typeSelect) {
-  const toggleBusinessFields = () => {
-    const val = (typeSelect.value || "").toLowerCase();
-    const isBusiness = val === "zakelijk";
-    ["bedrijfsnaam", "kvk", "btw"].forEach(id => {
-      const field = form.querySelector(`[name='${id}']`)?.closest(".form-field");
-      if (field) field.style.display = isBusiness ? "block" : "none";
-    });
-  };
+  // 🔹 Toon/verberg bedrijfsvelden bij typeKlant = Zakelijk
+  const typeSelect = form.querySelector("[name='typeKlant']");
+  if (typeSelect) {
+    const toggleBusinessFields = () => {
+      const val = (typeSelect.value || "").toLowerCase();
+      const isBusiness = val === "zakelijk";
+      ["bedrijfsnaam", "kvk", "btw"].forEach(id => {
+        const field = form.querySelector(`[name='${id}']`)?.closest(".form-field");
+        if (field) field.style.display = isBusiness ? "block" : "none";
+      });
+    };
 
-  toggleBusinessFields(); // bij openen
-  typeSelect.addEventListener("change", toggleBusinessFields);
-}
-
-    // ⚙️ Bij laden direct uitvoeren op basis van bestaande waarde
-    requestAnimationFrame(toggleBusinessFields);
-
-    // 🔁 Eventlistener bij wisselen
+    toggleBusinessFields(); // bij openen
     typeSelect.addEventListener("change", toggleBusinessFields);
   }
 
+  // 🔹 Alleen tonen en activeren als onDelete bestaat
+  const delBtn = card.querySelector("#delBtn");
+  if (onDelete) {
+    delBtn.classList.remove("hidden");
+    delBtn.onclick = () => {
+      confirmDelete("record", () => {
+        onDelete();
+        overlay.remove();
+      });
+    };
+  } else {
+    delBtn.classList.add("hidden");
+    delBtn.onclick = null;
+  }
 
- // 🔹 Alleen tonen en activeren als onDelete bestaat
-const delBtn = card.querySelector("#delBtn");
-if (onDelete) {
-  delBtn.classList.remove("hidden");
-  delBtn.onclick = () => {
-    confirmDelete("record", () => {
-      onDelete();
-      overlay.remove();
+  // 🔹 Annuleren sluit modal
+  card.querySelector("#cancel").onclick = () => overlay.remove();
+
+  // 🔹 Opslaan verwerkt formulier
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+
+    const vals = {};
+    fields.forEach(f => {
+      if (f.type === "multiselect") {
+        vals[f.id] = Array.from(
+          form.querySelectorAll(`input[name='${f.id}']:checked`)
+        ).map(x => x.value);
+      } else {
+        const inp = form.querySelector(`[name='${f.id}']`);
+        vals[f.id] = inp ? inp.value : null;
+      }
     });
+
+    await onSave(vals);
+    overlay.remove();
   };
-} else {
-  delBtn.classList.add("hidden");
-  delBtn.onclick = null;
 }
-
-// 🔹 Annuleren sluit modal
-card.querySelector("#cancel").onclick = () => overlay.remove();
-
-// 🔹 Opslaan verwerkt formulier
-form.onsubmit = async (e) => {
-  e.preventDefault();
-
-  const vals = {};
-  fields.forEach(f => {
-    if (f.type === "multiselect") {
-      vals[f.id] = Array.from(
-        form.querySelectorAll(`input[name='${f.id}']:checked`)
-      ).map(x => x.value);
-    } else {
-      const inp = form.querySelector(`[name='${f.id}']`);
-      vals[f.id] = inp ? inp.value : null;
-    }
-  });
-
-  await onSave(vals);
-  overlay.remove();
-};
-
 
 // ---------- 🗓️ Bereken volgende bezoekdatum ----------
 function calcNextVisit(lastVisit, frequency) {
