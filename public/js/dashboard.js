@@ -316,66 +316,80 @@ function openClientDetail(c) {
 
 
 // 📄 Contracten
-function renderContracts() {
+async function renderContracts() {
   const list = document.getElementById("contractsList");
 
-  const rows = contracts.map(c => [
-    c.client_name || "-",                                       // 🔹 rechtstreeks uit API
-    Array.isArray(c.type_service) ? c.type_service.join(", ") : c.type_service || "-",
-    c.frequency || "-",
-    c.description || "-",
-    c.price_inc ? `€${Number(c.price_inc).toFixed(2)}` : "€0.00",
-    c.vat_pct ? `${c.vat_pct}%` : "-",
-    c.last_visit ? c.last_visit.split("T")[0] : "-",
-    c.next_visit ? c.next_visit.split("T")[0] : "-"
-  ]);
+  try {
+    // ✅ Altijd live data uit DB ophalen
+    const res = await fetch("/api/contracts");
+    if (!res.ok) throw new Error("Fout bij ophalen contracten");
+    contracts = await res.json();
 
-  list.innerHTML = tableHTML(
-    ["Klant", "Type service", "Frequentie", "Beschrijving", "Prijs incl.", "BTW %", "Laatste bezoek", "Volgende bezoek"],
-    rows
-  );
+    // ✅ Tabelrijen genereren
+    const rows = contracts.map(c => [
+      c.client_name || "-",                                        // gekoppelde klantnaam via SQL JOIN
+      Array.isArray(c.type_service) ? c.type_service.join(", ") : (c.type_service || "-"),
+      c.frequency || "-",
+      c.description || "-",
+      c.price_inc ? `€${Number(c.price_inc).toFixed(2)}` : "€0.00",
+      c.vat_pct ? `${c.vat_pct}%` : "-",
+      c.last_visit ? c.last_visit.split("T")[0] : "-",
+      c.next_visit ? c.next_visit.split("T")[0] : "-"
+    ]);
 
-  // 🔹 Klik op rij = open contractdetail
-  list.querySelectorAll("tbody tr").forEach((tr, i) =>
-    tr.addEventListener("click", () => openContractDetail(contracts[i]))
-  );
+    // ✅ Tabellen renderen
+    list.innerHTML = tableHTML(
+      ["Klant", "Type service", "Frequentie", "Beschrijving", "Prijs incl.", "BTW %", "Laatste bezoek", "Volgende bezoek"],
+      rows
+    );
 
-  // 🔹 Nieuw contract
-  document.getElementById("newContractBtn").onclick = () =>
-    openModal("Nieuw Contract", [
-      { id: "clientId", label: "Klant", type: "select", options: clients.map(c => c.name) },
-      { id: "typeService", label: "Type service", type: "multiselect", options: settings.typeServices },
-      { id: "frequency", label: "Frequentie", type: "select", options: settings.frequencies },
-      { id: "description", label: "Beschrijving" },
-      { id: "priceEx", label: "Prijs excl. (€)" },
-      { id: "vatPct", label: "BTW (%)", type: "select", options: ["21", "9", "0"], value: "21" },
-      { id: "lastVisit", label: "Laatste bezoek", type: "date" },
-    ], async (vals) => {
-      try {
-        // zoek contactId van geselecteerde klant
-        const client = clients.find(c => c.name === vals.clientId);
-        if (!client) return showToast("Selecteer een bestaande klant", "error");
+    // ✅ Klik op rij = open contractdetail
+    list.querySelectorAll("tbody tr").forEach((tr, i) =>
+      tr.addEventListener("click", () => openContractDetail(contracts[i]))
+    );
 
-        const res = await fetch("/api/contracts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...vals, clientId: client.id }),
-        });
+    // ✅ Nieuw contract toevoegen
+    document.getElementById("newContractBtn").onclick = () =>
+      openModal("Nieuw Contract", [
+        { id: "clientId", label: "Klant", type: "select", options: clients.map(c => c.name) },
+        { id: "typeService", label: "Type service", type: "multiselect", options: settings.typeServices },
+        { id: "frequency", label: "Frequentie", type: "select", options: settings.frequencies },
+        { id: "description", label: "Beschrijving" },
+        { id: "priceEx", label: "Prijs excl. (€)" },
+        { id: "vatPct", label: "BTW (%)", type: "select", options: ["21", "9", "0"], value: "21" },
+        { id: "lastVisit", label: "Laatste bezoek", type: "date" },
+      ], async (vals) => {
+        try {
+          // Zoek contactId van geselecteerde klant
+          const client = clients.find(c => c.name === vals.clientId);
+          if (!client) return showToast("Selecteer een bestaande klant", "error");
 
-        if (!res.ok) {
-          showToast("Fout bij opslaan contract", "error");
-          return;
+          const res = await fetch("/api/contracts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...vals, clientId: client.id }),
+          });
+
+          if (!res.ok) {
+            showToast("Fout bij opslaan contract", "error");
+            return;
+          }
+
+          const contract = await res.json();
+          contracts.unshift(contract); // bovenaan tonen
+          showToast("Contract toegevoegd", "success");
+
+          // 🔁 Direct opnieuw laden vanuit DB om lijst te verversen
+          await renderContracts();
+        } catch (err) {
+          console.error("❌ Fout bij opslaan contract:", err);
+          showToast("Onverwachte fout bij opslaan contract", "error");
         }
-
-        const contract = await res.json();
-        contracts.unshift(contract); // bovenaan tonen
-        showToast("Contract toegevoegd", "success");
-        renderContracts();
-      } catch (err) {
-        console.error("❌ Fout bij opslaan contract:", err);
-        showToast("Onverwachte fout bij opslaan contract", "error");
-      }
-    });
+      });
+  } catch (err) {
+    console.error("❌ Fout bij laden contracten:", err);
+    showToast("Fout bij laden contractenlijst", "error");
+  }
 }
 
 
