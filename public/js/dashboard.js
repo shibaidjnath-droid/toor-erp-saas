@@ -17,49 +17,34 @@ let settings = {
 
 // ---------- Dummydata ----------
 let clients = [
-  { id: 1, name: "Kristal Helder BV", email: "info@kristalhelder.nl", phone: "010-1234567", street: "Hoofdstraat", houseNumber: "12A", city: "Rotterdam", tag: "Zakelijk" },
-  { id: 2, name: "Glansrijk Schoon", email: "contact@glansrijk.nl", phone: "06-12345678", street: "Dorpsweg", houseNumber: "88", city: "Capelle a/d IJssel", tag: "VvE" },
-  { id: 3, name: "Schoonzicht BV", email: "info@schoonzicht.nl", phone: "010-5558888", street: "Laan van Zuid", houseNumber: "5", city: "Schiedam", tag: "Zakelijk" },
-  { id: 4, name: "Jan Jansen", email: "jan@example.com", phone: "06-99999999", street: "Kerklaan", houseNumber: "9", city: "Vlaardingen", tag: "Particulier" },
+
 ];
 
 let contracts = [
-  { id: 1, clientId: 1, typeService: ["Glasbewassing"], frequency: "Maandelijks", description: "Ramen en kozijnen wassen", price: 120, vat: 21, lastVisit: "2025-09-25" },
-  { id: 2, clientId: 2, typeService: ["Schoonmaak"], frequency: "Kwartaal", description: "Volledige kantoorreiniging", price: 450, vat: 21, lastVisit: "2025-07-15" },
-  { id: 3, clientId: 4, typeService: ["Tuinonderhoud"], frequency: "Wekelijks", description: "Grasmaaien en snoeiwerk", price: 60, vat: 9, lastVisit: "2025-10-10" },
+  
 ];
 
 let planning = [
-  { id: 1, contractId: 1, date: "2025-10-25", status: "Gepland" },
-  { id: 2, contractId: 3, date: "2025-10-17", status: "Gepland" },
-  { id: 3, contractId: 2, date: "2025-10-20", status: "Uitgevoerd" },
+  
 ];
 
 let invoices = [
-  { id: 1, contractId: 1, clientId: 1, amount: 145.2, date: "2025-09-30", status: "Betaald" },
-  { id: 2, contractId: 2, clientId: 2, amount: 544.5, date: "2025-10-01", status: "Open" },
-  { id: 3, contractId: 3, clientId: 4, amount: 65.4, date: "2025-10-05", status: "Betaald" },
+  
 ];
 
 let members = [
-  { id: 1, name: "Pieter de Vries", email: "pieter@bedrijf.nl", phone: "06-12312312", role: ["Schoonmaker"] },
-  { id: 2, name: "Sanne Bakker", email: "sanne@bedrijf.nl", phone: "06-22222222", role: ["Teamleider"] },
-  { id: 3, name: "Mark Visser", email: "mark@bedrijf.nl", phone: "06-33333333", role: ["Planner"] },
+ 
 ];
 
 let emailLog = [
-  { id: 1, to: "klant@example.com", subject: "Factuur September", date: "2025-09-30" },
-  { id: 2, to: "contact@glansrijk.nl", subject: "Planning update", date: "2025-10-05" },
 ];
 
 let leads = [
-  { id: 1, name: "Eva Koster", email: "eva@voorbeeld.nl", phone: "06-11111111", source: "Website" },
-  { id: 2, name: "Tom Bos", email: "tom@bedrijf.nl", phone: "06-22222222", source: "Telefonisch" },
+  
 ];
 
 let quotes = [
-  { id: 1, title: "Offerte Glasbewassing", contact: "Kristal Helder BV", amount: 250, status: "Concept" },
-  { id: 2, title: "Offerte Kantoor reiniging", contact: "Glansrijk Schoon", amount: 480, status: "Verzonden" },
+  
 ];
 
 // ---------- Initialisatie ----------
@@ -211,8 +196,8 @@ async function renderClients() {
     c.name,
     c.email,
     c.phone,
-    c.typeKlant,
-    c.verzendMethode,
+    c.type_klant,
+    c.verzend_methode,
     c.tag || "-",
     c.status || "Active"
   ]);
