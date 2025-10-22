@@ -54,8 +54,8 @@ router.post("/", async (req, res) => {
     await pool.query(
       `INSERT INTO contacts
        (id, name, email, phone, address, house_number, city, type_klant,
-        bedrijfsnaam, kvk, btw, verzend_methode, status, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now())`,
+        bedrijfsnaam, kvk, btw, verzend_methode, status, tag, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,now())`,
       [
         clientId, name, email, phone || "", address || "", houseNumber || "", city || "",
         ["Particulier", "Zakelijk"].includes(typeKlant) ? typeKlant : "Particulier",
