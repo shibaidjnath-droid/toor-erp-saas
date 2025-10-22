@@ -39,7 +39,7 @@ router.post("/", async (req, res) => {
   try {
     const {
       name, email, phone, address, houseNumber, city,
-      typeKlant, bedrijfsnaam, kvk, btw, verzendMethode,
+      typeKlant, bedrijfsnaam, kvk, btw, verzendMethode, tag,
       status, contract_typeService, contract_frequency,
       contract_description, contract_priceInc, contract_vat,
       contract_lastVisit
