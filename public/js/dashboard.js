@@ -609,16 +609,19 @@ async function renderMembers() {
         { id: "email", label: "E-mail" },
         { id: "phone", label: "Telefoon" },
         { id: "roles", label: "Rol(len)", type: "multiselect", options: settings.roles },
-        { id: "active", label: "Actief", type: "checkbox", value: true },
+        { id: "active", label: "Status", type: "select", options: ["Actief", "Inactief"], value: "Actief" },
         { id: "end_date", label: "Tot en met", type: "date" },
       ], async (vals) => {
         try {
           vals.roles = Array.isArray(vals.roles) ? vals.roles : [];
+          vals.active = vals.active === "Actief"; // ✅ converteer naar boolean
+
           const res = await fetch("/api/members", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(vals),
           });
+
           if (!res.ok) throw new Error("Fout bij toevoegen member");
           const nieuw = await res.json();
           members.unshift(nieuw);
@@ -641,11 +644,13 @@ function openMemberDetail(m) {
     { id: "email", label: "E-mail", value: m.email },
     { id: "phone", label: "Telefoon", value: m.phone },
     { id: "roles", label: "Rol(len)", type: "multiselect", options: settings.roles, value: m.roles || [] },
-    { id: "active", label: "Actief", type: "checkbox", value: m.active },
+    { id: "active", label: "Status", type: "select", options: ["Actief", "Inactief"], value: m.active ? "Actief" : "Inactief" },
     { id: "end_date", label: "Tot en met", type: "date", value: m.end_date ? m.end_date.split("T")[0] : "" },
   ], async (vals) => {
     try {
       vals.roles = Array.isArray(vals.roles) ? vals.roles : [];
+      vals.active = vals.active === "Actief"; // ✅ converteer dropdown naar boolean
+
       const res = await fetch(`/api/members/${m.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -673,7 +678,6 @@ function openMemberDetail(m) {
     }
   }));
 }
-
 
 // ---------- Email Log, Leads, Offertes ----------
 function renderEmailLog(){
