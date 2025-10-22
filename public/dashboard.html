@@ -110,9 +110,14 @@
     <!-- Klanten -->
     <section id="clients" class="tab hidden">
       <div class="flex justify-between mb-4">
-        <h2 class="text-xl font-semibold">Klanten</h2>
-        <button id="newClientBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuw Klant</button>
-      </div>
+  <h2 class="text-xl font-semibold">Klanten</h2>
+  <div class="space-x-2">
+    <button id="importClientsBtn" class="bg-green-600 text-white px-3 py-2 rounded hover:bg-green-700">📥 Import</button>
+    <button id="exportClientsBtn" class="bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700">📤 Export</button>
+    <button id="newClientBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuw Klant</button>
+  </div>
+</div>
+
       <div id="clientsList"></div>
     </section>
 

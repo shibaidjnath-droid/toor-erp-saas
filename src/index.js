@@ -22,6 +22,7 @@ import membersRouter from './routes/members.js';
 import rolesRouter from './routes/roles.js';
 // Let op bestandsnaam: jouw file heet ServiceTypes.js
 import serviceTypesRouter from './routes/serviceTypes.js';
+import importExportRouter from './routes/importExport.js';
 
 const app = express();
 app.use(express.json());
@@ -48,6 +49,7 @@ app.use('/api/contracts', contractsRouter);
 app.use('/api/members', membersRouter);
 app.use('/api/roles', rolesRouter);
 app.use('/api/service-types', serviceTypesRouter);
+app.use('/api/import-export', importExportRouter);
 
 // dashboard
 app.get('/dashboard', (_req, res) => {

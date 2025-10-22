@@ -229,7 +229,7 @@ async function renderClients() {
       { id: "tag", label: "Tag", type: "select", options: settings.tags },
 
       // ---- Contractsectie ----
-      { id: "contract_typeService", label: "Contract: Type Service", type: "multiselect", options: settings.typeServices }, // ✅ multiselect
+      { id: "contract_typeService", label: "Contract: Type Service", type: "multiselect", options: settings.typeServices },
       { id: "contract_frequency", label: "Contract: Frequentie", type: "select", options: settings.frequencies },
       { id: "contract_description", label: "Contract: Beschrijving" },
       { id: "contract_priceInc", label: "Contract: Prijs incl. (€)" },
@@ -237,7 +237,6 @@ async function renderClients() {
       { id: "contract_lastVisit", label: "Contract: Laatste bezoek", type: "date" },
     ], async (vals) => {
       try {
-
         // 🔹 Klant opslaan
         const res = await fetch("/api/clients", {
           method: "POST",
@@ -271,6 +270,46 @@ async function renderClients() {
         showToast("Onverwachte fout bij opslaan klant", "error");
       }
     });
+
+  // ✅ Import knop
+  document.getElementById("importClientsBtn").onclick = async () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".csv,.xlsx";
+    input.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/import-export?type=clients", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(`Import voltooid: ${data.inserted} klanten toegevoegd`, "success");
+        await renderClients();
+      } else {
+        showToast(`Fout bij import: ${data.error}`, "error");
+      }
+    };
+    input.click();
+  };
+
+  // ✅ Export knop
+  document.getElementById("exportClientsBtn").onclick = async () => {
+    const res = await fetch("/api/import-export?type=clients");
+    if (!res.ok) return showToast("Fout bij exporteren", "error");
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "klanten_export.xlsx";
+    a.click();
+    window.URL.revokeObjectURL(url);
+    showToast("Export succesvol gedownload", "success");
+  };
 }
 
 
