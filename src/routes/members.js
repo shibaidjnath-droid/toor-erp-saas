@@ -7,7 +7,7 @@ const router = express.Router();
 
 /**
  * Member:
- * { id, name, email, phone, roles: string[], created_at }
+ * { id, name, email, phone, roles: string[], active: boolean, end_date: date, created_at }
  */
 
 /** ✅ GET – alle members **/
@@ -36,7 +36,7 @@ router.get("/:id", async (req, res) => {
 /** ✅ POST – nieuwe member **/
 router.post("/", async (req, res) => {
   try {
-    const { name, email, phone, roles = [] } = req.body;
+    const { name, email, phone, roles = [], active = true, end_date = null } = req.body;
     if (!name) return res.status(400).json({ error: "Naam is verplicht" });
 
     const member = {
@@ -45,13 +45,15 @@ router.post("/", async (req, res) => {
       email: email || "",
       phone: phone || "",
       roles: Array.isArray(roles) ? roles : [],
+      active: active === false ? false : true,
+      end_date: end_date || null,
     };
 
     const { rows } = await pool.query(
-      `INSERT INTO members (id, name, email, phone, roles, created_at)
-       VALUES ($1,$2,$3,$4,$5,now())
+      `INSERT INTO members (id, name, email, phone, roles, active, end_date, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,now())
        RETURNING *`,
-      [member.id, member.name, member.email, member.phone, member.roles]
+      [member.id, member.name, member.email, member.phone, member.roles, member.active, member.end_date]
     );
 
     res.status(201).json(rows[0]);
@@ -64,7 +66,7 @@ router.post("/", async (req, res) => {
 /** ✅ PUT – member bijwerken **/
 router.put("/:id", async (req, res) => {
   try {
-    const { name, email, phone, roles } = req.body;
+    const { name, email, phone, roles, active, end_date } = req.body;
     const cleanRoles = Array.isArray(roles) ? roles : [];
 
     const { rows } = await pool.query(
@@ -72,10 +74,12 @@ router.put("/:id", async (req, res) => {
        SET name = COALESCE($1, name),
            email = COALESCE($2, email),
            phone = COALESCE($3, phone),
-           roles = COALESCE($4, roles)
-       WHERE id = $5
+           roles = COALESCE($4, roles),
+           active = COALESCE($5, active),
+           end_date = COALESCE($6, end_date)
+       WHERE id = $7
        RETURNING *`,
-      [name, email, phone, cleanRoles, req.params.id]
+      [name, email, phone, cleanRoles, active, end_date, req.params.id]
     );
 
     if (!rows.length) return res.status(404).json({ error: "Member niet gevonden" });

@@ -572,36 +572,108 @@ function openInvoiceDetail(i){
   }));
 }
 
-// ---------- Members ----------
-function renderMembers(){
-  const list=document.getElementById("membersList");
-  list.innerHTML=tableHTML(["Naam","E-mail","Telefoon","Rol"],
-    members.map(m=>[m.name,m.email,m.phone,m.role.join(", ")]));
-  list.querySelectorAll("tbody tr").forEach((tr,i)=>
-    tr.addEventListener("click",()=>openMemberDetail(members[i])));
-  document.getElementById("newMemberBtn").onclick=()=>openModal("Nieuwe Member",[
-    {id:"name",label:"Naam"},{id:"email",label:"E-mail"},
-    {id:"phone",label:"Telefoon"},
-    {id:"role",label:"Rol",type:"multiselect",options:settings.roles},
-  ],vals=>{
-    members.push({id:Date.now(),...vals});
-    showToast("Member toegevoegd","success");renderMembers();
-  });
+// ---------- 🧍 Members ----------
+async function renderMembers() {
+  const list = document.getElementById("membersList");
+
+  try {
+    // ✅ Altijd live ophalen uit DB
+    const res = await fetch("/api/members");
+    if (!res.ok) throw new Error("Fout bij ophalen members");
+    members = await res.json();
+
+    // ✅ Tabelrijen
+    const rows = members.map(m => [
+      m.name,
+      m.email || "-",
+      m.phone || "-",
+      (m.roles || []).join(", ") || "-",
+      m.active ? "✅ Actief" : "⛔ Inactief",
+      m.end_date ? m.end_date.split("T")[0] : "-"
+    ]);
+
+    list.innerHTML = tableHTML(
+      ["Naam", "E-mail", "Telefoon", "Rol(len)", "Status", "Tot en met"],
+      rows
+    );
+
+    // Klik op rij = open detail
+    list.querySelectorAll("tbody tr").forEach((tr, i) =>
+      tr.addEventListener("click", () => openMemberDetail(members[i]))
+    );
+
+    // ✅ Nieuw member toevoegen
+    document.getElementById("newMemberBtn").onclick = () =>
+      openModal("Nieuwe Member", [
+        { id: "name", label: "Naam" },
+        { id: "email", label: "E-mail" },
+        { id: "phone", label: "Telefoon" },
+        { id: "roles", label: "Rol(len)", type: "multiselect", options: settings.roles },
+        { id: "active", label: "Actief", type: "checkbox", value: true },
+        { id: "end_date", label: "Tot en met", type: "date" },
+      ], async (vals) => {
+        try {
+          vals.roles = Array.isArray(vals.roles) ? vals.roles : [];
+          const res = await fetch("/api/members", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(vals),
+          });
+          if (!res.ok) throw new Error("Fout bij toevoegen member");
+          const nieuw = await res.json();
+          members.unshift(nieuw);
+          showToast(`Member ${nieuw.name} toegevoegd`, "success");
+          renderMembers();
+        } catch (err) {
+          console.error("❌ Member insert error:", err);
+          showToast("Fout bij toevoegen member", "error");
+        }
+      });
+  } catch (err) {
+    console.error("❌ Fout bij laden members:", err);
+    showToast("Fout bij laden members", "error");
+  }
 }
-function openMemberDetail(m){
-  openModal(`Member bewerken – ${m.name}`,[
-    {id:"name",label:"Naam",value:m.name},
-    {id:"email",label:"E-mail",value:m.email},
-    {id:"phone",label:"Telefoon",value:m.phone},
-    {id:"role",label:"Rol",type:"multiselect",options:settings.roles,value:m.role},
-  ],vals=>{
-    Object.assign(m,vals);
-    showToast("Member opgeslagen","success");renderMembers();
-  },()=>confirmDelete("member",()=>{
-    members=members.filter(x=>x.id!==m.id);
-    renderMembers();showToast("Member verwijderd","success");
+
+function openMemberDetail(m) {
+  openModal(`Member bewerken – ${m.name}`, [
+    { id: "name", label: "Naam", value: m.name },
+    { id: "email", label: "E-mail", value: m.email },
+    { id: "phone", label: "Telefoon", value: m.phone },
+    { id: "roles", label: "Rol(len)", type: "multiselect", options: settings.roles, value: m.roles || [] },
+    { id: "active", label: "Actief", type: "checkbox", value: m.active },
+    { id: "end_date", label: "Tot en met", type: "date", value: m.end_date ? m.end_date.split("T")[0] : "" },
+  ], async (vals) => {
+    try {
+      vals.roles = Array.isArray(vals.roles) ? vals.roles : [];
+      const res = await fetch(`/api/members/${m.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(vals),
+      });
+      if (!res.ok) throw new Error("Fout bij opslaan member");
+      const updated = await res.json();
+      Object.assign(m, updated);
+      showToast("Member opgeslagen", "success");
+      renderMembers();
+    } catch (err) {
+      console.error("❌ Member update error:", err);
+      showToast("Fout bij opslaan member", "error");
+    }
+  }, () => confirmDelete("member", async () => {
+    try {
+      const res = await fetch(`/api/members/${m.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Fout bij verwijderen member");
+      members = members.filter(x => x.id !== m.id);
+      showToast("Member verwijderd", "success");
+      renderMembers();
+    } catch (err) {
+      console.error("❌ Member delete error:", err);
+      showToast("Fout bij verwijderen member", "error");
+    }
   }));
 }
+
 
 // ---------- Email Log, Leads, Offertes ----------
 function renderEmailLog(){
