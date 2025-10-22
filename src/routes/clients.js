@@ -51,22 +51,29 @@ router.post("/", async (req, res) => {
     const clientId = uuidv4();
 
     // ✅ klant opslaan
-   await pool.query(
+  await pool.query(
   `INSERT INTO contacts
    (id, name, email, phone, address, house_number, city, type_klant,
     bedrijfsnaam, kvk, btw, verzend_methode, tag, status, created_at)
-   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,now())`,
+   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,now())`,
   [
-    clientId, name, email, phone || "", address || "", houseNumber || "", city || "",
+    clientId,
+    name,
+    email,
+    phone || "",
+    address || "",
+    houseNumber || "",
+    city || "",
     ["Particulier", "Zakelijk"].includes(typeKlant) ? typeKlant : "Particulier",
     typeKlant === "Zakelijk" ? (bedrijfsnaam || "") : "",
     typeKlant === "Zakelijk" ? (kvk || "") : "",
     typeKlant === "Zakelijk" ? (btw || "") : "",
     ["Whatsapp", "Email"].includes(verzendMethode) ? verzendMethode : "Email",
-    tag || null,                // nu vóór status
+    tag || null,
     status || "Active",
   ]
 );
+
 
 
     // ✅ contract aanmaken als velden aanwezig zijn
