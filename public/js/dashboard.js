@@ -587,16 +587,18 @@ if (filter === "date" && dateInput.value)
   const data = await res.json();
   planning = data.items || [];
 
-  const rows = planning.map(p => [
-    `${p.address || ""} ${p.house_number || ""}, ${p.city || ""}`,
-    p.customer || "-",
-    p.date ? p.date.split("T")[0] : "-",
-    p.member_name || "-",
-    p.status || "Gepland",
-  ]);
+ const rows = planning.map(p => [
+  `${p.address || ""} ${p.house_number || ""}, ${p.city || ""}`,
+  p.customer || "-",
+  p.date ? p.date.split("T")[0] : "-",
+  p.member_name || "-",
+  p.comment || "-",  // ✅ nieuw veld
+  p.status || "Gepland"
+]);
 
-  const tbl = document.getElementById("planningTable");
-  tbl.innerHTML = tableHTML(["Adres", "Klant", "Datum", "Member", "Status"], rows);
+const tbl = document.getElementById("planningTable");
+tbl.innerHTML = tableHTML(["Adres", "Klant", "Datum", "Member", "Opmerking", "Status"], rows);
+
 
   // klikbare rijen
   tbl.querySelectorAll("tbody tr").forEach((tr, i) =>
@@ -613,16 +615,24 @@ if (filter === "date" && dateInput.value)
 }
 
 // ✅ Nieuw item aanmaken
-function openNewPlanningModal() {
+async function openNewPlanningModal() {
+  // ✅ Controleer of contracts geladen zijn
+  if (!Array.isArray(contracts) || !contracts.length) {
+    const cRes = await fetch("/api/contracts");
+    if (cRes.ok) contracts = await cRes.json();
+  }
+
+  // ✅ Bouw dropdown met opties
+  const contractOptions = contracts.map(c =>
+    `${c.client_name || "-"} – ${c.description || "-"} – ${c.address || ""}`
+  );
+
   openModal("Nieuw Planning-Item", [
     {
       id: "contractId",
       label: "Adres / Klant",
       type: "select",
-      // contract moet al globaal geladen zijn
-      options: contracts.map(c =>
-        `${c.client_name || "-"} – ${c.description || "-"} – ${c.address || ""}`
-      ),
+      options: contractOptions
     },
     {
       id: "memberId",
@@ -654,7 +664,7 @@ function openNewPlanningModal() {
       contractId: selectedContract.id,
       memberId: member?.id || null,
       date: vals.date,
-      status: vals.status,
+      status: vals.status
     };
 
     const r = await fetch("/api/planning", {
@@ -668,7 +678,6 @@ function openNewPlanningModal() {
     } else showToast("Fout bij aanmaken", "error");
   });
 }
-
 
 // ✅ Detail bewerken / verwijderen
 function openPlanningDetail(p) {

@@ -119,7 +119,7 @@ router.post("/", async (req, res) => {
     const contract = rows[0];
 
     // ✅ Automatisch planningrecord (alleen als next_visit <= vandaag)
-    if (contract.next_visit && new Date(contract.next_visit) <= new Date()) {
+   if (contract.next_visit) {
       try {
         const existing = await pool.query(
           "SELECT id FROM planning WHERE contract_id=$1 AND date::date=$2::date",
@@ -195,7 +195,7 @@ router.put("/:id", async (req, res) => {
     const contract = rows[0];
 
     // ✅ Automatisch planningrecord (alleen als next_visit <= vandaag)
-    if (contract.next_visit && new Date(contract.next_visit) <= new Date()) {
+    if (contract.next_visit) {
       try {
         const existing = await pool.query(
           "SELECT id FROM planning WHERE contract_id=$1 AND date::date=$2::date",
