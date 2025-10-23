@@ -27,7 +27,19 @@ router.post("/", async (req, res) => {
 
   try {
     // --- 1️⃣ Klant aanmaken ---
-    const safeTag = Array.isArray(client.tag) ? client.tag : [client.tag].filter(Boolean);
+   // ✅ Veiligheidscheck — garandeert altijd geldige JSON-array
+let safeTag = [];
+try {
+  if (Array.isArray(client.tag)) {
+    safeTag = client.tag;
+  } else if (typeof client.tag === "string" && client.tag.trim() !== "") {
+    safeTag = [client.tag];
+  } else {
+    safeTag = [];
+  }
+} catch {
+  safeTag = [];
+}
     const safeTypeKlant = client.typeKlant || "Onbekend";
     const safeVerzendMethode = client.verzendMethode || "Email";
 

@@ -519,11 +519,11 @@ async function renderPlanning() {
               class="border rounded px-2 py-1 bg-white text-gray-800
                      dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600">
         <option value="today">Vandaag</option>
-        <option value="week" selected>Deze week</option>
+        <option value="week">Deze week</option>
         <option value="month">Deze maand</option>
         <option value="year">Dit jaar</option>
         <option value="date">Specifieke datum…</option>
-        <option value="all">Alles</option>
+        <option value="all" selected>Alles</option>
       </select>
 
       <input id="customDate" type="date"
