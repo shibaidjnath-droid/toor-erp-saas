@@ -559,53 +559,48 @@ async function renderPlanning() {
   </div>
   <div id="planningTable"></div>
 `;
-
   list.innerHTML = controlsHTML;
 
   await loadPlanningData();
 }
 
-// Helper om data opnieuw te laden bij filterverandering
+// ---------- Data opnieuw laden ----------
 async function loadPlanningData() {
- const filter = document.getElementById("planningFilter")?.value || "week";
-const dateInput = document.getElementById("customDate");
-if (filter === "date") dateInput.classList.remove("hidden");
-else dateInput.classList.add("hidden");
+  const filter = document.getElementById("planningFilter")?.value || "week";
+  const dateInput = document.getElementById("customDate");
+  if (filter === "date") dateInput.classList.remove("hidden");
+  else dateInput.classList.add("hidden");
 
-const memberId = document.getElementById("memberFilter")?.value || "";
-const status = document.getElementById("statusFilter")?.value || "";
+  const memberId = document.getElementById("memberFilter")?.value || "";
+  const status = document.getElementById("statusFilter")?.value || "";
 
-const url = new URL("/api/planning/schedule", window.location.origin);
-url.searchParams.set("range", filter === "date" ? "day" : filter);
-if (memberId) url.searchParams.set("memberId", memberId);
-if (status) url.searchParams.set("status", status);
-if (filter === "date" && dateInput.value)
-  url.searchParams.set("start", dateInput.value);
-
+  const url = new URL("/api/planning/schedule", window.location.origin);
+  url.searchParams.set("range", filter === "date" ? "day" : filter);
+  if (memberId) url.searchParams.set("memberId", memberId);
+  if (status) url.searchParams.set("status", status);
+  if (filter === "date" && dateInput.value)
+    url.searchParams.set("start", dateInput.value);
 
   const res = await fetch(url);
   const data = await res.json();
   planning = data.items || [];
 
- const rows = planning.map(p => [
-  `${p.address || ""} ${p.house_number || ""}, ${p.city || ""}`,
-  p.customer || "-",
-  p.date ? p.date.split("T")[0] : "-",
-  p.member_name || "-",
-  p.comment || "-",  // ✅ nieuw veld
-  p.status || "Gepland"
-]);
+  const rows = planning.map(p => [
+    `${p.address || ""} ${p.house_number || ""}, ${p.city || ""}`,
+    p.customer || "-",
+    p.date ? p.date.split("T")[0] : "-",
+    p.member_name || "-",
+    p.comment || "-",
+    p.status || "Gepland"
+  ]);
 
-const tbl = document.getElementById("planningTable");
-tbl.innerHTML = tableHTML(["Adres", "Klant", "Datum", "Member", "Opmerking", "Status"], rows);
+  const tbl = document.getElementById("planningTable");
+  tbl.innerHTML = tableHTML(["Adres", "Klant", "Datum", "Member", "Opmerking", "Status"], rows);
 
-
-  // klikbare rijen
   tbl.querySelectorAll("tbody tr").forEach((tr, i) =>
     tr.addEventListener("click", () => openPlanningDetail(planning[i]))
   );
 
-  // events
   document.getElementById("planningFilter").onchange = loadPlanningData;
   document.getElementById("memberFilter").onchange = loadPlanningData;
   document.getElementById("customDate").onchange = loadPlanningData;
@@ -614,25 +609,37 @@ tbl.innerHTML = tableHTML(["Adres", "Klant", "Datum", "Member", "Opmerking", "St
   document.getElementById("newPlanningBtn").onclick = openNewPlanningModal;
 }
 
-// ✅ Nieuw item aanmaken
+// ---------- Nieuw planning-item ----------
 async function openNewPlanningModal() {
-  // ✅ Controleer of contracts geladen zijn
+  // ✅ Contracts laden indien leeg
   if (!Array.isArray(contracts) || !contracts.length) {
     const cRes = await fetch("/api/contracts");
     if (cRes.ok) contracts = await cRes.json();
   }
 
-  // ✅ Bouw dropdown met opties
-  const contractOptions = contracts.map(c =>
-    `${c.client_name || "-"} – ${c.description || "-"} – ${c.address || ""}`
-  );
-
+  // ✅ Handmatig zoekveld voor contractselectie
   openModal("Nieuw Planning-Item", [
     {
       id: "contractId",
       label: "Adres / Klant",
-      type: "select",
-      options: contractOptions
+      type: "custom",
+      render: () => `
+        <div class="relative">
+          <input id="contractSearchInput" type="text"
+            placeholder="Zoek klant of adres..."
+            class="w-full border rounded px-2 py-1 mb-1
+                   bg-white text-gray-800
+                   dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600">
+          <ul id="contractList"
+              class="max-h-40 overflow-y-auto border rounded hidden absolute z-10 w-full
+                     bg-white dark:bg-gray-800 dark:border-gray-600">
+            ${contracts.map(c => `
+              <li data-id="${c.id}"
+                  class="px-2 py-1 cursor-pointer hover:bg-blue-100 dark:hover:bg-gray-700">
+                ${c.client_name || "-"} – ${c.description || "-"} – ${c.address || ""}
+              </li>`).join("")}
+          </ul>
+        </div>`
     },
     {
       id: "memberId",
@@ -655,10 +662,12 @@ async function openNewPlanningModal() {
     }
   ], async vals => {
     const member = members.find(m => m.name === vals.memberId);
-    const selectedContract = contracts.find(c =>
-      `${c.client_name || "-"} – ${c.description || "-"} – ${c.address || ""}` === vals.contractId
-    );
-    if (!selectedContract) return showToast("Selecteer geldig contract", "error");
+    const selectedId =
+      document.getElementById("contractSearchInput")?.dataset.id || null;
+    const selectedContract = contracts.find(c => c.id === selectedId);
+
+    if (!selectedContract)
+      return showToast("Selecteer geldig contract", "error");
 
     const body = {
       contractId: selectedContract.id,
@@ -677,9 +686,35 @@ async function openNewPlanningModal() {
       loadPlanningData();
     } else showToast("Fout bij aanmaken", "error");
   });
+
+  // 🔍 Zoekfunctie activeren na render
+  setTimeout(() => {
+    const input = document.getElementById("contractSearchInput");
+    const list = document.getElementById("contractList");
+    if (!input || !list) return;
+
+    input.addEventListener("focus", () => list.classList.remove("hidden"));
+    input.addEventListener("input", () => {
+      const term = input.value.toLowerCase();
+      list.querySelectorAll("li").forEach(li => {
+        li.classList.toggle("hidden", !li.textContent.toLowerCase().includes(term));
+      });
+    });
+    list.querySelectorAll("li").forEach(li => {
+      li.addEventListener("click", () => {
+        input.value = li.textContent.trim();
+        input.dataset.id = li.dataset.id;
+        list.classList.add("hidden");
+      });
+    });
+    document.addEventListener("click", e => {
+      if (!list.contains(e.target) && e.target !== input)
+        list.classList.add("hidden");
+    });
+  }, 100);
 }
 
-// ✅ Detail bewerken / verwijderen
+// ---------- Detail bewerken ----------
 function openPlanningDetail(p) {
   if (!p) {
     showToast("Ongeldig planning item", "error");
@@ -693,12 +728,9 @@ function openPlanningDetail(p) {
     { id: "memberId", label: "Member", type: "select", options: (members || []).map(m => m.name), value: p.member_name || "" },
     { id: "status", label: "Status", type: "select", options: ["Gepland","Bezig","Afgerond","Geannuleerd"], value: p.status || "Gepland" },
     { id: "comment", label: "Opmerking", type: "textarea", value: p.comment || "" },
-
   ], async vals => {
     try {
       const member = members.find(m => m.name === vals.memberId);
-
-      // 🔹 basisupdate
       const updateRes = await fetch(`/api/planning/${p.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -715,7 +747,6 @@ function openPlanningDetail(p) {
         return;
       }
 
-      // 🔹 extra logica bij statuswijziging
       if (vals.status === "Geannuleerd") {
         const herplan = confirm("Wil je her-inplannen volgens frequentie?\nOK = automatisch, Annuleren = zelf datum kiezen.");
         if (herplan) {
@@ -724,11 +755,8 @@ function openPlanningDetail(p) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ date: new Date().toISOString().split("T")[0] })
           });
-          if (genRes.ok) {
-            showToast("Her-inplanning uitgevoerd", "success");
-          } else {
-            showToast("Fout bij her-inplannen", "error");
-          }
+          if (genRes.ok) showToast("Her-inplanning uitgevoerd", "success");
+          else showToast("Fout bij her-inplannen", "error");
         } else {
           const nieuwe = prompt("Kies nieuwe datum (YYYY-MM-DD):");
           if (nieuwe) {
@@ -741,11 +769,8 @@ function openPlanningDetail(p) {
                 status: "Gepland"
               })
             });
-            if (newRes.ok) {
-              showToast("Nieuwe afspraak ingepland", "success");
-            } else {
-              showToast("Fout bij nieuwe afspraak", "error");
-            }
+            if (newRes.ok) showToast("Nieuwe afspraak ingepland", "success");
+            else showToast("Fout bij nieuwe afspraak", "error");
           }
         }
       }
@@ -761,7 +786,7 @@ function openPlanningDetail(p) {
   });
 }
 
-// ✅ Automatische generatie (AI/ORS-backend)
+// ---------- Automatische generatie ----------
 async function generatePlanning() {
   showToast("Planning wordt gegenereerd...", "info");
   const r = await fetch("/api/planning/generate", {
