@@ -66,9 +66,10 @@ try {
       client.kvk || "",
       client.btw || "",
       safeVerzendMethode,
-      safeTag,
+      JSON.stringify(safeTag),
       client.facturatie || "",
     ];
+console.log("🔍 tag value before insert:", JSON.stringify(safeTag));
 
     const { rows: newClientRows } = await pool.query(insertClient, clientValues);
     const newClient = newClientRows[0];
