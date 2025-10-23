@@ -565,7 +565,7 @@ async function renderPlanning() {
 
 // ---------- Data opnieuw laden ----------
 async function loadPlanningData() {
-  const filter = document.getElementById("planningFilter")?.value || "week";
+  const filter = document.getElementById("planningFilter")?.value || "all";
   const dateInput = document.getElementById("customDate");
   if (filter === "date") dateInput.classList.remove("hidden");
   else dateInput.classList.add("hidden");
