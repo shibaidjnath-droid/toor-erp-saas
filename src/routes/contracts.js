@@ -12,7 +12,7 @@ const allowedFreq = [
 ];
 
 // Hulpfunctie voor berekenen volgende bezoek
-function computeNextVisit(lastVisit, frequency) {
+export function computeNextVisit(lastVisit, frequency) {
   const base = lastVisit ? new Date(lastVisit) : new Date();
   const d = new Date(base);
   switch (frequency) {

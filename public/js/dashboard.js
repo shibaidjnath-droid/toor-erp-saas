@@ -498,7 +498,7 @@ async function renderPlanning() {
   }
 
   // ✅ Planning laden
-  const range = "week";
+  const range = "all";
   const url = new URL("/api/planning/schedule", window.location.origin);
   url.searchParams.set("range", range);
 
@@ -542,7 +542,6 @@ async function renderPlanning() {
                      dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600">
         <option value="">Alle Statussen</option>
         <option value="Gepland">Gepland</option>
-        <option value="Bezig">Bezig</option>
         <option value="Afgerond">Afgerond</option>
         <option value="Geannuleerd">Geannuleerd</option>
       </select>
@@ -657,7 +656,7 @@ async function openNewPlanningModal() {
       id: "status",
       label: "Status",
       type: "select",
-      options: ["Gepland", "Bezig", "Afgerond", "Geannuleerd"],
+      options: ["Gepland", "Afgerond", "Geannuleerd"],
       value: "Gepland"
     }
   ], async vals => {
@@ -726,7 +725,7 @@ function openPlanningDetail(p) {
     { id: "customer", label: "Klant", value: p.customer || "-", readonly: true },
     { id: "date", label: "Datum", type: "date", value: p.date ? p.date.split("T")[0] : "" },
     { id: "memberId", label: "Member", type: "select", options: (members || []).map(m => m.name), value: p.member_name || "" },
-    { id: "status", label: "Status", type: "select", options: ["Gepland","Bezig","Afgerond","Geannuleerd"], value: p.status || "Gepland" },
+    { id: "status", label: "Status", type: "select", options: ["Gepland","Afgerond","Geannuleerd"], value: p.status || "Gepland" },
     { id: "comment", label: "Opmerking", type: "textarea", value: p.comment || "" },
   ], async vals => {
     try {
