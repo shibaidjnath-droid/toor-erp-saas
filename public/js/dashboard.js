@@ -487,44 +487,158 @@ function openContractDetail(c) {
 }
 
 
-// ---------- Planning ----------
-function renderPlanning(){
-  const list=document.getElementById("planningList");
-  const rows=planning.map(p=>{
-    const c=contracts.find(x=>x.id===p.contractId);
-    const client=clients.find(cl=>cl.id===c?.clientId)?.name||"-";
-    return [client,c?.description||"-",p.date,p.status];
-  });
-  list.innerHTML=tableHTML(["Klant","Contract","Datum","Status"],rows);
-  list.querySelectorAll("tbody tr").forEach((tr,i)=>
-    tr.addEventListener("click",()=>openPlanningDetail(planning[i])));
-  document.getElementById("newPlanningBtn").onclick=()=>openModal("Nieuw Planning-item",[
-    {id:"contract",label:"Contract",type:"select",options:contracts.map(c=>c.description)},
-    {id:"date",label:"Datum",type:"date"},
-    {id:"status",label:"Status",type:"select",options:["Gepland","Uitgevoerd","Geannuleerd"]},
-  ],vals=>{
-    const c=contracts.find(x=>x.description===vals.contract);
-    planning.push({id:Date.now(),contractId:c?.id,date:vals.date,status:vals.status});
-    showToast("Planning toegevoegd","success");renderPlanning();
+// ---------- 🗓️ Planning ----------
+async function renderPlanning() {
+  const list = document.getElementById("planningList");
+
+  // ✅ Members laden (voor filters en modals)
+  if (!Array.isArray(members) || !members.length) {
+    const mRes = await fetch("/api/members");
+    if (mRes.ok) members = await mRes.json();
+  }
+
+  // ✅ Planning laden
+  const range = "week";
+  const url = new URL("/api/planning/schedule", window.location.origin);
+  url.searchParams.set("range", range);
+
+  const res = await fetch(url);
+  if (!res.ok) {
+    showToast("Fout bij laden planning", "error");
+    return;
+  }
+
+  planning = (await res.json()).items || [];
+
+  // ✅ Filters + knoppen (bovenaan)
+  const controlsHTML = `
+    <div class="flex justify-between mb-4">
+      <h2 class="text-xl font-semibold">Planning</h2>
+      <div class="space-x-2">
+        <select id="planningFilter" class="border rounded px-2 py-1">
+          <option value="today">Vandaag</option>
+          <option value="week" selected>Deze week</option>
+          <option value="nextweek">Volgende week</option>
+          <option value="month">Deze maand</option>
+          <option value="year">Dit jaar</option>
+          <option value="all">Alles</option>
+        </select>
+        <select id="memberFilter" class="border rounded px-2 py-1">
+          <option value="">Alle Members</option>
+          ${members.map(m => `<option value="${m.id}">${m.name}</option>`).join("")}
+        </select>
+        <button id="generatePlanningBtn" class="bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700">⚙️ Genereer</button>
+        <button id="newPlanningBtn" class="bg-primary text-white px-3 py-2 rounded hover:bg-blue-700">+ Nieuw Item</button>
+      </div>
+    </div>
+    <div id="planningTable"></div>
+  `;
+  list.innerHTML = controlsHTML;
+
+  await loadPlanningData();
+}
+
+// Helper om data opnieuw te laden bij filterverandering
+async function loadPlanningData() {
+  const range = document.getElementById("planningFilter")?.value || "week";
+  const memberId = document.getElementById("memberFilter")?.value || "";
+  const url = new URL("/api/planning/schedule", window.location.origin);
+  url.searchParams.set("range", range);
+  if (memberId) url.searchParams.set("memberId", memberId);
+
+  const res = await fetch(url);
+  const data = await res.json();
+  planning = data.items || [];
+
+  const rows = planning.map(p => [
+    `${p.address || ""} ${p.house_number || ""}, ${p.city || ""}`,
+    p.customer || "-",
+    p.date ? p.date.split("T")[0] : "-",
+    p.member_name || "-",
+    p.status || "Gepland",
+  ]);
+
+  const tbl = document.getElementById("planningTable");
+  tbl.innerHTML = tableHTML(["Adres", "Klant", "Datum", "Member", "Status"], rows);
+
+  // klikbare rijen
+  tbl.querySelectorAll("tbody tr").forEach((tr, i) =>
+    tr.addEventListener("click", () => openPlanningDetail(planning[i]))
+  );
+
+  // events
+  document.getElementById("planningFilter").onchange = loadPlanningData;
+  document.getElementById("memberFilter").onchange = loadPlanningData;
+  document.getElementById("generatePlanningBtn").onclick = generatePlanning;
+  document.getElementById("newPlanningBtn").onclick = openNewPlanningModal;
+}
+
+// ✅ Nieuw item aanmaken
+function openNewPlanningModal() {
+  openModal("Nieuw Planning-Item", [
+    { id: "contractId", label: "Contract ID" },
+    { id: "memberId", label: "Member", type: "select", options: members.map(m => m.name) },
+    { id: "date", label: "Datum", type: "date", value: new Date().toISOString().split("T")[0] },
+    { id: "status", label: "Status", type: "select", options: ["Gepland","Bezig","Afgerond","Geannuleerd"], value: "Gepland" },
+  ], async vals => {
+    const member = members.find(m => m.name === vals.memberId);
+    const body = {
+      contractId: vals.contractId,
+      memberId: member?.id || null,
+      date: vals.date,
+      status: vals.status,
+    };
+    const r = await fetch("/api/planning", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    if (r.ok) {
+      showToast("Planning-item toegevoegd", "success");
+      loadPlanningData();
+    } else showToast("Fout bij aanmaken", "error");
   });
 }
-function openPlanningDetail(p){
-  const c=contracts.find(x=>x.id===p.contractId);
-  openModal("Planning bewerken",[
-    {id:"contract",label:"Contract",type:"select",options:contracts.map(c=>c.description),value:c?.description},
-    {id:"date",label:"Datum",type:"date",value:p.date},
-    {id:"status",label:"Status",type:"select",options:["Gepland","Uitgevoerd","Geannuleerd"],value:p.status},
-  ],vals=>{
-    Object.assign(p,{
-      contractId:contracts.find(x=>x.description===vals.contract)?.id,
-      date:vals.date,status:vals.status
+
+// ✅ Detail bewerken / verwijderen
+function openPlanningDetail(p) {
+  openModal(`Planning – ${p.customer || "-"}`, [
+    { id: "address", label: "Adres", value: `${p.address || ""} ${p.house_number || ""}, ${p.city || ""}`, readonly: true },
+    { id: "customer", label: "Klant", value: p.customer || "-", readonly: true },
+    { id: "date", label: "Datum", type: "date", value: p.date ? p.date.split("T")[0] : "" },
+    { id: "memberId", label: "Member", type: "select", options: members.map(m => m.name), value: p.member_name || "" },
+    { id: "status", label: "Status", type: "select", options: ["Gepland","Bezig","Afgerond","Geannuleerd"], value: p.status || "Gepland" },
+  ], async vals => {
+    const member = members.find(m => m.name === vals.memberId);
+    const r = await fetch(`/api/planning/${p.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ memberId: member?.id || null, date: vals.date, status: vals.status })
     });
-    showToast("Planning opgeslagen","success");renderPlanning();
-  },()=>confirmDelete("planning",()=>{
-    planning=planning.filter(x=>x.id!==p.id);
-    renderPlanning();showToast("Planning verwijderd","success");
+    if (r.ok) { showToast("Planning opgeslagen", "success"); loadPlanningData(); }
+    else showToast("Fout bij opslaan", "error");
+  }, () => confirmDelete("planning-item", async () => {
+    const r = await fetch(`/api/planning/${p.id}`, { method: "DELETE" });
+    if (r.ok) { showToast("Planning verwijderd", "success"); loadPlanningData(); }
+    else showToast("Fout bij verwijderen", "error");
   }));
 }
+
+// ✅ Automatische generatie (AI/ORS-backend)
+async function generatePlanning() {
+  showToast("Planning wordt gegenereerd...", "info");
+  const r = await fetch("/api/planning/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ date: new Date().toISOString().split("T")[0] })
+  });
+  const d = await r.json();
+  if (r.ok) {
+    showToast(`Planning gegenereerd (${d.generated} taken)`, "success");
+    loadPlanningData();
+  } else showToast(d.error || "Fout bij genereren", "error");
+}
+
 
 // ---------- Facturen ----------
 function renderInvoices(){
