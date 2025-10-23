@@ -39,7 +39,6 @@ router.get("/", async (_req, res) => {
       ORDER BY c.created_at DESC
     `);
 
-    // JSON parse type_service als het in stringvorm staat
     const parsed = rows.map(r => ({
       ...r,
       type_service:
@@ -100,7 +99,6 @@ router.post("/", async (req, res) => {
     const vat = isNaN(parseFloat(vatPct)) ? 21 : parseFloat(vatPct);
     const inc = +(ex * (1 + vat / 100)).toFixed(2);
     const nextVisit = computeNextVisit(lastVisit, freq);
-
     const id = uuidv4();
 
     const { rows } = await pool.query(
@@ -118,11 +116,32 @@ router.post("/", async (req, res) => {
       ]
     );
 
-    const r = rows[0];
-    if (typeof r.type_service === "string")
-      r.type_service = JSON.parse(r.type_service);
+    const contract = rows[0];
 
-    res.status(201).json(r);
+    // ✅ Automatisch planningrecord (alleen als next_visit <= vandaag)
+    if (contract.next_visit && new Date(contract.next_visit) <= new Date()) {
+      try {
+        const existing = await pool.query(
+          "SELECT id FROM planning WHERE contract_id=$1 AND date::date=$2::date",
+          [contract.id, contract.next_visit]
+        );
+        if (!existing.rowCount) {
+          await pool.query(
+            `INSERT INTO planning (id, contract_id, date, status, created_at)
+             VALUES ($1,$2,$3,'Gepland',now())`,
+            [uuidv4(), contract.id, contract.next_visit]
+          );
+          console.log(`✅ Planningrecord aangemaakt voor nieuw contract ${contract.id}`);
+        }
+      } catch (err) {
+        console.error("❌ Fout bij automatisch planningrecord (POST):", err.message);
+      }
+    }
+
+    if (typeof contract.type_service === "string")
+      contract.type_service = JSON.parse(contract.type_service);
+
+    res.status(201).json(contract);
   } catch (err) {
     console.error("❌ DB insert error:", err.message);
     res.status(500).json({ error: "Database insert error" });
@@ -173,11 +192,33 @@ router.put("/:id", async (req, res) => {
     if (!rows.length)
       return res.status(404).json({ error: "Contract niet gevonden" });
 
-    const r = rows[0];
-    if (typeof r.type_service === "string")
-      r.type_service = JSON.parse(r.type_service);
+    const contract = rows[0];
 
-    res.json(r);
+    // ✅ Automatisch planningrecord (alleen als next_visit <= vandaag)
+    if (contract.next_visit && new Date(contract.next_visit) <= new Date()) {
+      try {
+        const existing = await pool.query(
+          "SELECT id FROM planning WHERE contract_id=$1 AND date::date=$2::date",
+          [contract.id, contract.next_visit]
+        );
+        if (!existing.rowCount) {
+          await pool.query(
+            `INSERT INTO planning (id, contract_id, date, status, created_at)
+             VALUES ($1,$2,$3,'Gepland',now())`,
+            [uuidv4(), contract.id, contract.next_visit]
+          );
+          console.log(`✅ Planningrecord aangemaakt bij update voor contract ${contract.id}`);
+          console.log(`📢 Debug: automatisch planningrecord aangemaakt (${contract.id})`);
+        }
+      } catch (err) {
+        console.error("❌ Fout bij automatisch planningrecord (PUT):", err.message);
+      }
+    }
+
+    if (typeof contract.type_service === "string")
+      contract.type_service = JSON.parse(contract.type_service);
+
+    res.json(contract);
   } catch (err) {
     console.error("❌ DB update error:", err.message);
     res.status(500).json({ error: "Database update error" });

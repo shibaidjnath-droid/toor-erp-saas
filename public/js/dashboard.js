@@ -515,7 +515,8 @@ async function renderPlanning() {
     <div class="flex justify-between mb-4">
       <h2 class="text-xl font-semibold">Planning</h2>
       <div class="space-x-2">
-        <select id="planningFilter" class="border rounded px-2 py-1">
+        <select id="planningFilter" class="border rounded px-2 py-1 bg-white text-gray-800
+               dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600">
           <option value="today">Vandaag</option>
           <option value="week" selected>Deze week</option>
           <option value="nextweek">Volgende week</option>
@@ -523,7 +524,8 @@ async function renderPlanning() {
           <option value="year">Dit jaar</option>
           <option value="all">Alles</option>
         </select>
-        <select id="memberFilter" class="border rounded px-2 py-1">
+        <select id="memberFilter" class="border rounded px-2 py-1 bg-white text-gray-800
+               dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600">
           <option value="">Alle Members</option>
           ${members.map(m => `<option value="${m.id}">${m.name}</option>`).join("")}
         </select>
@@ -1123,3 +1125,14 @@ function showToast(message, type = "info") {
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 3000);
 }
+
+// ---------- 🧩 DEBUG PANEL ----------
+function appendDebug(msg) {
+  const dbg = document.getElementById("debugPanel");
+  if (!dbg) return;
+  const line = document.createElement("div");
+  line.className = "text-xs border-b border-gray-700 py-0.5";
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  dbg.prepend(line);
+}
+
