@@ -512,29 +512,54 @@ async function renderPlanning() {
 
   // ✅ Filters + knoppen (bovenaan)
   const controlsHTML = `
-    <div class="flex justify-between mb-4">
-      <h2 class="text-xl font-semibold">Planning</h2>
-      <div class="space-x-2">
-        <select id="planningFilter" class="border rounded px-2 py-1 bg-white text-gray-800
-               dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600">
-          <option value="today">Vandaag</option>
-          <option value="week" selected>Deze week</option>
-          <option value="nextweek">Volgende week</option>
-          <option value="month">Deze maand</option>
-          <option value="year">Dit jaar</option>
-          <option value="all">Alles</option>
-        </select>
-        <select id="memberFilter" class="border rounded px-2 py-1 bg-white text-gray-800
-               dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600">
-          <option value="">Alle Members</option>
-          ${members.map(m => `<option value="${m.id}">${m.name}</option>`).join("")}
-        </select>
-        <button id="generatePlanningBtn" class="bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700">⚙️ Genereer</button>
-        <button id="newPlanningBtn" class="bg-primary text-white px-3 py-2 rounded hover:bg-blue-700">+ Nieuw Item</button>
-      </div>
+  <div class="flex justify-between mb-4 flex-wrap gap-2">
+    <h2 class="text-xl font-semibold">Planning</h2>
+    <div class="flex flex-wrap gap-2">
+      <select id="planningFilter"
+              class="border rounded px-2 py-1 bg-white text-gray-800
+                     dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600">
+        <option value="today">Vandaag</option>
+        <option value="week" selected>Deze week</option>
+        <option value="month">Deze maand</option>
+        <option value="year">Dit jaar</option>
+        <option value="date">Specifieke datum…</option>
+        <option value="all">Alles</option>
+      </select>
+
+      <input id="customDate" type="date"
+             class="hidden border rounded px-2 py-1 bg-white text-gray-800
+                    dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600"/>
+
+      <select id="memberFilter"
+              class="border rounded px-2 py-1 bg-white text-gray-800
+                     dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600">
+        <option value="">Alle Members</option>
+        ${members.map(m => `<option value="${m.id}">${m.name}</option>`).join("")}
+      </select>
+
+      <select id="statusFilter"
+              class="border rounded px-2 py-1 bg-white text-gray-800
+                     dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600">
+        <option value="">Alle Statussen</option>
+        <option value="Gepland">Gepland</option>
+        <option value="Bezig">Bezig</option>
+        <option value="Afgerond">Afgerond</option>
+        <option value="Geannuleerd">Geannuleerd</option>
+      </select>
+
+      <button id="generatePlanningBtn"
+              class="bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700">
+        ⚙️ Genereer
+      </button>
+      <button id="newPlanningBtn"
+              class="bg-primary text-white px-3 py-2 rounded hover:bg-blue-700">
+        + Nieuw Item
+      </button>
     </div>
-    <div id="planningTable"></div>
-  `;
+  </div>
+  <div id="planningTable"></div>
+`;
+
   list.innerHTML = controlsHTML;
 
   await loadPlanningData();
@@ -542,11 +567,21 @@ async function renderPlanning() {
 
 // Helper om data opnieuw te laden bij filterverandering
 async function loadPlanningData() {
-  const range = document.getElementById("planningFilter")?.value || "week";
-  const memberId = document.getElementById("memberFilter")?.value || "";
-  const url = new URL("/api/planning/schedule", window.location.origin);
-  url.searchParams.set("range", range);
-  if (memberId) url.searchParams.set("memberId", memberId);
+ const filter = document.getElementById("planningFilter")?.value || "week";
+const dateInput = document.getElementById("customDate");
+if (filter === "date") dateInput.classList.remove("hidden");
+else dateInput.classList.add("hidden");
+
+const memberId = document.getElementById("memberFilter")?.value || "";
+const status = document.getElementById("statusFilter")?.value || "";
+
+const url = new URL("/api/planning/schedule", window.location.origin);
+url.searchParams.set("range", filter === "date" ? "day" : filter);
+if (memberId) url.searchParams.set("memberId", memberId);
+if (status) url.searchParams.set("status", status);
+if (filter === "date" && dateInput.value)
+  url.searchParams.set("start", dateInput.value);
+
 
   const res = await fetch(url);
   const data = await res.json();
@@ -571,6 +606,8 @@ async function loadPlanningData() {
   // events
   document.getElementById("planningFilter").onchange = loadPlanningData;
   document.getElementById("memberFilter").onchange = loadPlanningData;
+  document.getElementById("customDate").onchange = loadPlanningData;
+  document.getElementById("statusFilter").onchange = loadPlanningData;
   document.getElementById("generatePlanningBtn").onclick = generatePlanning;
   document.getElementById("newPlanningBtn").onclick = openNewPlanningModal;
 }
@@ -578,18 +615,48 @@ async function loadPlanningData() {
 // ✅ Nieuw item aanmaken
 function openNewPlanningModal() {
   openModal("Nieuw Planning-Item", [
-    { id: "contractId", label: "Contract ID" },
-    { id: "memberId", label: "Member", type: "select", options: members.map(m => m.name) },
-    { id: "date", label: "Datum", type: "date", value: new Date().toISOString().split("T")[0] },
-    { id: "status", label: "Status", type: "select", options: ["Gepland","Bezig","Afgerond","Geannuleerd"], value: "Gepland" },
+    {
+      id: "contractId",
+      label: "Adres / Klant",
+      type: "select",
+      // contract moet al globaal geladen zijn
+      options: contracts.map(c =>
+        `${c.client_name || "-"} – ${c.description || "-"} – ${c.address || ""}`
+      ),
+    },
+    {
+      id: "memberId",
+      label: "Member",
+      type: "select",
+      options: members.map(m => m.name)
+    },
+    {
+      id: "date",
+      label: "Datum",
+      type: "date",
+      value: new Date().toISOString().split("T")[0]
+    },
+    {
+      id: "status",
+      label: "Status",
+      type: "select",
+      options: ["Gepland", "Bezig", "Afgerond", "Geannuleerd"],
+      value: "Gepland"
+    }
   ], async vals => {
     const member = members.find(m => m.name === vals.memberId);
+    const selectedContract = contracts.find(c =>
+      `${c.client_name || "-"} – ${c.description || "-"} – ${c.address || ""}` === vals.contractId
+    );
+    if (!selectedContract) return showToast("Selecteer geldig contract", "error");
+
     const body = {
-      contractId: vals.contractId,
+      contractId: selectedContract.id,
       memberId: member?.id || null,
       date: vals.date,
       status: vals.status,
     };
+
     const r = await fetch("/api/planning", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -602,28 +669,87 @@ function openNewPlanningModal() {
   });
 }
 
+
 // ✅ Detail bewerken / verwijderen
 function openPlanningDetail(p) {
+  if (!p) {
+    showToast("Ongeldig planning item", "error");
+    return;
+  }
+
   openModal(`Planning – ${p.customer || "-"}`, [
     { id: "address", label: "Adres", value: `${p.address || ""} ${p.house_number || ""}, ${p.city || ""}`, readonly: true },
     { id: "customer", label: "Klant", value: p.customer || "-", readonly: true },
     { id: "date", label: "Datum", type: "date", value: p.date ? p.date.split("T")[0] : "" },
-    { id: "memberId", label: "Member", type: "select", options: members.map(m => m.name), value: p.member_name || "" },
+    { id: "memberId", label: "Member", type: "select", options: (members || []).map(m => m.name), value: p.member_name || "" },
     { id: "status", label: "Status", type: "select", options: ["Gepland","Bezig","Afgerond","Geannuleerd"], value: p.status || "Gepland" },
+    { id: "comment", label: "Opmerking", type: "textarea", value: p.comment || "" },
+
   ], async vals => {
-    const member = members.find(m => m.name === vals.memberId);
-    const r = await fetch(`/api/planning/${p.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ memberId: member?.id || null, date: vals.date, status: vals.status })
-    });
-    if (r.ok) { showToast("Planning opgeslagen", "success"); loadPlanningData(); }
-    else showToast("Fout bij opslaan", "error");
-  }, () => confirmDelete("planning-item", async () => {
-    const r = await fetch(`/api/planning/${p.id}`, { method: "DELETE" });
-    if (r.ok) { showToast("Planning verwijderd", "success"); loadPlanningData(); }
-    else showToast("Fout bij verwijderen", "error");
-  }));
+    try {
+      const member = members.find(m => m.name === vals.memberId);
+
+      // 🔹 basisupdate
+      const updateRes = await fetch(`/api/planning/${p.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          memberId: member?.id || null,
+          date: vals.date,
+          status: vals.status,
+          comment: vals.comment
+        })
+      });
+
+      if (!updateRes.ok) {
+        showToast("Fout bij opslaan planning item", "error");
+        return;
+      }
+
+      // 🔹 extra logica bij statuswijziging
+      if (vals.status === "Geannuleerd") {
+        const herplan = confirm("Wil je her-inplannen volgens frequentie?\nOK = automatisch, Annuleren = zelf datum kiezen.");
+        if (herplan) {
+          const genRes = await fetch("/api/planning/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ date: new Date().toISOString().split("T")[0] })
+          });
+          if (genRes.ok) {
+            showToast("Her-inplanning uitgevoerd", "success");
+          } else {
+            showToast("Fout bij her-inplannen", "error");
+          }
+        } else {
+          const nieuwe = prompt("Kies nieuwe datum (YYYY-MM-DD):");
+          if (nieuwe) {
+            const newRes = await fetch("/api/planning", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                contractId: p.contract_id || p.contractId,
+                date: nieuwe,
+                status: "Gepland"
+              })
+            });
+            if (newRes.ok) {
+              showToast("Nieuwe afspraak ingepland", "success");
+            } else {
+              showToast("Fout bij nieuwe afspraak", "error");
+            }
+          }
+        }
+      }
+
+      if (vals.status === "Afgerond")
+        showToast("Afspraak afgerond — contract bijgewerkt", "info");
+
+      loadPlanningData();
+    } catch (err) {
+      console.error("❌ Fout bij opslaan planning item:", err);
+      showToast("Onverwachte fout bij opslaan planning item", "error");
+    }
+  });
 }
 
 // ✅ Automatische generatie (AI/ORS-backend)
