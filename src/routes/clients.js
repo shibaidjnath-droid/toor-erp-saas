@@ -77,9 +77,19 @@ console.log("🔍 tag value before insert:", JSON.stringify(safeTag));
 
     // --- 2️⃣ Contract aanmaken (indien aanwezig in payload) ---
     if (client.contract_frequency && client.contract_typeService) {
-      const safeServices = Array.isArray(client.contract_typeService)
-        ? client.contract_typeService
-        : [client.contract_typeService].filter(Boolean);
+// ✅ Veiligheidscheck — garandeert altijd geldige JSON-array voor type_service
+let safeServices = [];
+try {
+  if (Array.isArray(client.contract_typeService)) {
+    safeServices = client.contract_typeService;
+  } else if (typeof client.contract_typeService === "string" && client.contract_typeService.trim() !== "") {
+    safeServices = [client.contract_typeService];
+  } else {
+    safeServices = [];
+  }
+} catch {
+  safeServices = [];
+}
 
       // bereken next_visit
       let nextVisit = null;
@@ -111,7 +121,7 @@ console.log("🔍 tag value before insert:", JSON.stringify(safeTag));
         client.contract_description || "",
         parseFloat(client.contract_priceInc) || 0,
         parseFloat(client.contract_vat) || 21,
-        safeServices, // ✅ geen JSON.stringify()
+        JSON.stringify(safeServices), // ✅ JSON-veilig
         client.contract_lastVisit || null,
         nextVisit,
       ];
