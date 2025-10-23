@@ -51,6 +51,7 @@ router.post("/", async (req, res) => {
     const clientId = uuidv4();
 
     // ✅ klant opslaan
+    console.log("🧾 Nieuwe klant payload:", req.body);
   await pool.query(
   `INSERT INTO contacts
    (id, name, email, phone, address, house_number, city, type_klant,
