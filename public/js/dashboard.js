@@ -679,42 +679,50 @@ async function openNewPlanningModal() {
     } else showToast("Fout bij aanmaken", "error");
   });
 
-  // ✅ Zoekfunctionaliteit activeren ná render
-  setTimeout(() => {
-    const input = document.getElementById("contractSearchInput");
-    const list = document.getElementById("contractList");
-    if (!input || !list) return;
+// ✅ Zoekfunctionaliteit activeren nádat modaal 100% in DOM staat
+function initContractSearch() {
+  const input = document.getElementById("contractSearchInput");
+  const list  = document.getElementById("contractList");
+  if (!input || !list) {
+    // wacht één frame en probeer opnieuw
+    requestAnimationFrame(initContractSearch);
+    return;
+  }
 
-    input.addEventListener("input", () => {
-      const term = input.value.toLowerCase();
-      const matches = contracts.filter(c =>
-        (c.client_name || "").toLowerCase().includes(term) ||
-        (c.address || "").toLowerCase().includes(term) ||
-        (c.city || "").toLowerCase().includes(term)
-      ).slice(0, 15);
+  input.addEventListener("input", () => {
+    const term = input.value.toLowerCase();
+    const matches = contracts.filter(c =>
+      (c.client_name || "").toLowerCase().includes(term) ||
+      (c.address || "").toLowerCase().includes(term) ||
+      (c.city || "").toLowerCase().includes(term)
+    ).slice(0, 15);
 
-      list.innerHTML = matches.map(c => `
-        <li data-id="${c.id}"
-            class="px-2 py-1 cursor-pointer hover:bg-blue-100 dark:hover:bg-gray-700">
-          ${c.client_name || "-"} – ${c.address || ""}, ${c.city || ""}
-        </li>`).join("");
+    list.innerHTML = matches.map(c => `
+      <li data-id="${c.id}"
+          class="px-2 py-1 cursor-pointer hover:bg-blue-100 dark:hover:bg-gray-700">
+        ${c.client_name || "-"} – ${c.address || ""}, ${c.city || ""}
+      </li>`).join("");
 
-      list.classList.toggle("hidden", matches.length === 0);
-    });
+    list.classList.toggle("hidden", matches.length === 0);
+  });
 
-    list.addEventListener("click", e => {
-      if (e.target.tagName === "LI") {
-        input.value = e.target.textContent.trim();
-        input.dataset.id = e.target.dataset.id;
-        list.classList.add("hidden");
-      }
-    });
+  list.addEventListener("click", e => {
+    if (e.target.tagName === "LI") {
+      input.value = e.target.textContent.trim();
+      input.dataset.id = e.target.dataset.id;
+      list.classList.add("hidden");
+    }
+  });
 
-    document.addEventListener("click", e => {
-      if (!list.contains(e.target) && e.target !== input)
-        list.classList.add("hidden");
-    });
-  }, 100);
+  document.addEventListener("click", e => {
+    if (!list.contains(e.target) && e.target !== input)
+      list.classList.add("hidden");
+  });
+}
+
+
+// start de check zodra modaal is geopend
+requestAnimationFrame(initContractSearch);
 }
 
 
