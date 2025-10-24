@@ -626,12 +626,16 @@ async function openNewPlanningModal() {
   // Bouw het modaal
   openModal("Nieuw Planning-Item", [
     { id: "searchTerm", label: "Zoek klant / adres", placeholder: "Bijv. Voorstraat of Jan" },
-    { id: "contractId", label: "Selecteer contract", type: "select", options: [] },
-    { id: "memberId", label: "Member", type: "select", options: members.map(m => m.name) },
+    { id: "contractId", label: "Selecteer contract", type: "select", options: [{ value: "", label: "Zoek en selecteer een contract", disabled: true, selected: true }] },
+    { id: "memberId", label: "Member", type: "select", options: members.map(m => ({ value: m.id, label: m.name })) },
     { id: "date", label: "Datum", type: "date", value: new Date().toISOString().split("T")[0] },
     { id: "status", label: "Status", type: "select", options: ["Gepland", "Afgerond", "Geannuleerd"], value: "Gepland" }
   ], async vals => {
-    const member = members.find(m => m.name === vals.memberId);
+    const member = members.find(m => String(m.id) === String(vals.memberId));
+    if (!vals.contractId || vals.contractId === "" || vals.contractId === undefined) {
+      showToast("Selecteer een geldig contract voordat je opslaat", "error");
+      return;
+    }
     const body = {
       contractId: vals.contractId,
       memberId: member?.id || null,
@@ -645,7 +649,7 @@ async function openNewPlanningModal() {
     });
     if (r.ok) {
       showToast("Planning-item toegevoegd", "success");
-      loadPlanningData();
+      await loadPlanningData();
     } else showToast("Fout bij aanmaken", "error");
   });
 
