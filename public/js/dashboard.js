@@ -686,6 +686,119 @@ async function openNewPlanningModal() {
     } else showToast("Fout bij aanmaken", "error");
   });
 
+  // ✅ Interactieve zoekfunctionaliteit (na openModal!)
+  const input = document.getElementById("contractSearchInput");
+  const list = document.getElementById("contractList");
+
+  if (input && list) {
+    input.addEventListener("input", () => {
+      const term = input.value.toLowerCase();
+      const matches = contracts.filter(c =>
+        (c.client_name || "").toLowerCase().includes(term) ||
+        (c.address || "").toLowerCase().includes(term) ||
+        (c.city || "").toLowerCase().includes(term)
+      );
+
+      list.innerHTML = matches.map(c => `
+        <li data-id="${c.id}"
+            class="px-2 py-1 cursor-pointer hover:bg-blue-100 dark:hover:bg-gray-700">
+          ${c.client_name || "-"} – ${c.address || ""}, ${c.city || ""}
+        </li>`).join("");
+
+      list.classList.toggle("hidden", matches.length === 0);
+    });
+
+    list.addEventListener("click", e => {
+      if (e.target.tagName === "LI") {
+        const id = e.target.dataset.id;
+        const text = e.target.textContent;
+        input.value = text;
+        input.dataset.id = id; // ✅ koppelt ID aan input
+        list.classList.add("hidden");
+      }
+    });
+
+    // Klik buiten dropdown sluit lijst
+    document.addEventListener("click", e => {
+      if (!list.contains(e.target) && e.target !== input) {
+        list.classList.add("hidden");
+      }
+    });
+  }
+}
+
+
+
+  // ✅ Handmatig zoekveld voor contractselectie
+  openModal("Nieuw Planning-Item", [
+    {
+      id: "contractId",
+      label: "Adres / Klant",
+      type: "custom",
+      render: () => `
+        <div class="relative">
+          <input id="contractSearchInput" type="text"
+            placeholder="Zoek klant of adres..."
+            class="w-full border rounded px-2 py-1 mb-1
+                   bg-white text-gray-800
+                   dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600">
+          <ul id="contractList"
+              class="max-h-40 overflow-y-auto border rounded hidden absolute z-10 w-full
+                     bg-white dark:bg-gray-800 dark:border-gray-600">
+            ${contracts.map(c => `
+              <li data-id="${c.id}"
+                  class="px-2 py-1 cursor-pointer hover:bg-blue-100 dark:hover:bg-gray-700">
+                ${c.client_name || "-"} – ${c.description || "-"} – ${c.address || ""}
+              </li>`).join("")}
+          </ul>
+        </div>`
+    },
+    {
+      id: "memberId",
+      label: "Member",
+      type: "select",
+      options: members.map(m => m.name)
+    },
+    {
+      id: "date",
+      label: "Datum",
+      type: "date",
+      value: new Date().toISOString().split("T")[0]
+    },
+    {
+      id: "status",
+      label: "Status",
+      type: "select",
+      options: ["Gepland", "Afgerond", "Geannuleerd"],
+      value: "Gepland"
+    }
+  ], async vals => {
+    const member = members.find(m => m.name === vals.memberId);
+    const selectedId =
+      document.getElementById("contractSearchInput")?.dataset.id || null;
+    const selectedContract = contracts.find(c => c.id === selectedId);
+
+    if (!selectedContract)
+      return showToast("Selecteer geldig contract", "error");
+
+    const body = {
+      contractId: selectedContract.id,
+      memberId: member?.id || null,
+      date: vals.date,
+      status: vals.status
+    };
+
+    const r = await fetch("/api/planning", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    if (r.ok) {
+      showToast("Planning-item toegevoegd", "success");
+      loadPlanningData();
+    } else showToast("Fout bij aanmaken", "error");
+  });
+
   // 🔍 Zoekfunctie activeren na render
   setTimeout(() => {
     const input = document.getElementById("contractSearchInput");
@@ -711,7 +824,7 @@ async function openNewPlanningModal() {
         list.classList.add("hidden");
     });
   }, 100);
-}
+
 
 // ---------- Detail bewerken ----------
 function openPlanningDetail(p) {
