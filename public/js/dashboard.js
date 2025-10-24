@@ -649,11 +649,11 @@ async function openNewPlanningModal() {
     } else showToast("Fout bij aanmaken", "error");
   });
 
-  // Simpele zoekfunctie
+    // 🔍 Simpele maar robuuste zoekfunctie
   const input = document.getElementById("searchTerm");
   const select = document.getElementById("contractId");
 
-  input.addEventListener("change", async () => {
+  async function performSearch() {
     const term = input.value.trim();
     if (!term) return;
     const matches = await searchContracts(term);
@@ -663,9 +663,28 @@ async function openNewPlanningModal() {
       return;
     }
     select.innerHTML = matches.map(
-      c => `<option value="${c.id}">${c.client_name || "-"} – ${c.address || ""}, ${c.city || ""}</option>`
+      c => `<option value="${c.id}">
+              ${c.client_name || "-"} – ${c.address || ""}, ${c.city || ""}
+            </option>`
     ).join("");
     showToast(`${matches.length} resultaten gevonden`, "success");
+  }
+
+  // 👉 Zoek automatisch bij Enter
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      performSearch();
+    }
+  });
+
+  // 👉 Of bij typen (met kleine vertraging)
+  let debounce;
+  input.addEventListener("input", () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      if (input.value.trim().length >= 2) performSearch();
+    }, 400);
   });
 }
 
