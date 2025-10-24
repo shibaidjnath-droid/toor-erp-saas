@@ -610,64 +610,34 @@ async function loadPlanningData() {
 
 // ---------- Nieuw planning-item ----------
 async function openNewPlanningModal() {
-  // ✅ Contracts laden indien leeg
-  if (!Array.isArray(contracts) || !contracts.length) {
-    const cRes = await fetch("/api/contracts");
-    if (cRes.ok) contracts = await cRes.json();
+  // Contracten handmatig ophalen bij zoeken
+  async function searchContracts(term) {
+    const res = await fetch("/api/contracts");
+    if (!res.ok) return [];
+    const all = await res.json();
+    term = term.toLowerCase();
+    return all.filter(c =>
+      (c.client_name || "").toLowerCase().includes(term) ||
+      (c.address || "").toLowerCase().includes(term) ||
+      (c.city || "").toLowerCase().includes(term)
+    ).slice(0, 20);
   }
 
-  // ✅ Modaal venster openen
+  // Bouw het modaal
   openModal("Nieuw Planning-Item", [
-    {
-      id: "contractId",
-      label: "Adres / Klant",
-      type: "custom",
-      render: () => `
-        <div class="relative">
-          <input id="contractSearchInput" type="text"
-            placeholder="Zoek klant of adres..."
-            class="w-full border rounded px-2 py-1 mb-1
-                   bg-white text-gray-800
-                   dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600">
-          <ul id="contractList"
-              class="max-h-40 overflow-y-auto border rounded hidden absolute z-10 w-full
-                     bg-white dark:bg-gray-800 dark:border-gray-600"></ul>
-        </div>`
-    },
-    {
-      id: "memberId",
-      label: "Member",
-      type: "select",
-      options: members.map(m => m.name)
-    },
-    {
-      id: "date",
-      label: "Datum",
-      type: "date",
-      value: new Date().toISOString().split("T")[0]
-    },
-    {
-      id: "status",
-      label: "Status",
-      type: "select",
-      options: ["Gepland", "Afgerond", "Geannuleerd"],
-      value: "Gepland"
-    }
+    { id: "searchTerm", label: "Zoek klant / adres", placeholder: "Bijv. Voorstraat of Jan" },
+    { id: "contractId", label: "Selecteer contract", type: "select", options: [] },
+    { id: "memberId", label: "Member", type: "select", options: members.map(m => m.name) },
+    { id: "date", label: "Datum", type: "date", value: new Date().toISOString().split("T")[0] },
+    { id: "status", label: "Status", type: "select", options: ["Gepland", "Afgerond", "Geannuleerd"], value: "Gepland" }
   ], async vals => {
     const member = members.find(m => m.name === vals.memberId);
-    const selectedId = document.getElementById("contractSearchInput")?.dataset.id || null;
-    const selectedContract = contracts.find(c => c.id === selectedId);
-
-    if (!selectedContract)
-      return showToast("Selecteer geldig contract", "error");
-
     const body = {
-      contractId: selectedContract.id,
+      contractId: vals.contractId,
       memberId: member?.id || null,
       date: vals.date,
       status: vals.status
     };
-
     const r = await fetch("/api/planning", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -679,50 +649,25 @@ async function openNewPlanningModal() {
     } else showToast("Fout bij aanmaken", "error");
   });
 
-  // ✅ Zoekfunctionaliteit activeren
-  function initContractSearch() {
-    const input = document.getElementById("contractSearchInput");
-    const list  = document.getElementById("contractList");
-    if (!input || !list) return; // als modal nog niet klaar is
+  // Simpele zoekfunctie
+  const input = document.getElementById("searchTerm");
+  const select = document.getElementById("contractId");
 
-    input.addEventListener("input", () => {
-      const term = input.value.toLowerCase();
-      const matches = contracts
-        .filter(c =>
-          (c.client_name || "").toLowerCase().includes(term) ||
-          (c.address || "").toLowerCase().includes(term) ||
-          (c.city || "").toLowerCase().includes(term)
-        )
-        .slice(0, 15);
-
-      list.innerHTML = matches.map(c => `
-        <li data-id="${c.id}"
-            class="px-2 py-1 cursor-pointer hover:bg-blue-100 dark:hover:bg-gray-700">
-          ${c.client_name || "-"} – ${c.address || ""}, ${c.city || ""}
-        </li>`).join("");
-
-      list.classList.toggle("hidden", matches.length === 0);
-    });
-
-    list.addEventListener("click", e => {
-      if (e.target.tagName === "LI") {
-        input.value = e.target.textContent.trim();
-        input.dataset.id = e.target.dataset.id;
-        list.classList.add("hidden");
-      }
-    });
-
-    document.addEventListener("click", e => {
-      if (!list.contains(e.target) && e.target !== input)
-        list.classList.add("hidden");
-    });
-  }
-
-  // 🕐 wacht heel kort tot modal echt is opgebouwd
-  setTimeout(initContractSearch, 150);
+  input.addEventListener("change", async () => {
+    const term = input.value.trim();
+    if (!term) return;
+    const matches = await searchContracts(term);
+    if (!matches.length) {
+      showToast("Geen contracten gevonden", "info");
+      select.innerHTML = "";
+      return;
+    }
+    select.innerHTML = matches.map(
+      c => `<option value="${c.id}">${c.client_name || "-"} – ${c.address || ""}, ${c.city || ""}</option>`
+    ).join("");
+    showToast(`${matches.length} resultaten gevonden`, "success");
+  });
 }
-
-
 
 // ---------- Detail bewerken ----------
 function openPlanningDetail(p) {
