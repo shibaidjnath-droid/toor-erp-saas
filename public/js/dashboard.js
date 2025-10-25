@@ -1236,25 +1236,41 @@ function openModal(title, fields, onSave, onDelete) {
   // 🔹 Annuleren sluit modal
   card.querySelector("#cancel").onclick = () => overlay.remove();
 
-  // 🔹 Opslaan verwerkt formulier
-  form.onsubmit = async (e) => {
-    e.preventDefault();
+  // 🔹 Opslaan verwerkt formulier (met knopbeveiliging)
+form.onsubmit = async (e) => {
+  e.preventDefault();
+  const saveBtn = card.querySelector("#save");
+  const cancelBtn = card.querySelector("#cancel");
 
-    const vals = {};
-    fields.forEach(f => {
-      if (f.type === "multiselect") {
-        vals[f.id] = Array.from(
-          form.querySelectorAll(`input[name='${f.id}']:checked`)
-        ).map(x => x.value);
-      } else {
-        const inp = form.querySelector(`[name='${f.id}']`);
-        vals[f.id] = inp ? inp.value : null;
-      }
-    });
+  // 🟡 Knoppen tijdelijk uitschakelen
+  saveBtn.disabled = true;
+  cancelBtn.disabled = true;
+  saveBtn.textContent = "Opslaan...";
 
-    await onSave(vals);
-    overlay.remove();
-  };
+  const vals = {};
+  fields.forEach(f => {
+    if (f.type === "multiselect") {
+      vals[f.id] = Array.from(
+        form.querySelectorAll(`input[name='${f.id}']:checked`)
+      ).map(x => x.value);
+    } else {
+      const inp = form.querySelector(`[name='${f.id}']`);
+      vals[f.id] = inp ? inp.value : null;
+    }
+  });
+
+  try {
+    await onSave(vals);  // wacht netjes tot API-call klaar is
+    overlay.remove();    // sluit modal pas na succes
+  } catch (err) {
+    console.error("Form save error:", err);
+    showToast("Opslaan mislukt", "error");
+    saveBtn.disabled = false;
+    cancelBtn.disabled = false;
+    saveBtn.textContent = "Opslaan";
+  }
+};
+
 }
 
 // ---------- 🗓️ Bereken volgende bezoekdatum ----------
