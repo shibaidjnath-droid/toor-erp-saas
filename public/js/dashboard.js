@@ -567,8 +567,24 @@ async function renderPlanning() {
 async function loadPlanningData() {
   const filter = document.getElementById("planningFilter")?.value || "all";
   const dateInput = document.getElementById("customDate");
-  if (filter === "date") dateInput.classList.remove("hidden");
-  else dateInput.classList.add("hidden");
+  const tbl = document.getElementById("planningTable");
+
+  // 🔹 Toon of verberg datumveld
+  if (filter === "date") {
+    dateInput.classList.remove("hidden");
+
+    // 🛑 Geen datum gekozen → niks tonen en geen fetch
+    if (!dateInput.value) {
+      planning = [];
+      tbl.innerHTML = `
+        <div class="text-gray-500 dark:text-gray-400 p-3 text-center">
+          Kies eerst een datum om planning te laden.
+        </div>`;
+      return; // Stop hier
+    }
+  } else {
+    dateInput.classList.add("hidden");
+  }
 
   const memberId = document.getElementById("memberFilter")?.value || "";
   const status = document.getElementById("statusFilter")?.value || "";
@@ -581,6 +597,11 @@ async function loadPlanningData() {
     url.searchParams.set("start", dateInput.value);
 
   const res = await fetch(url);
+  if (!res.ok) {
+    showToast("Fout bij laden planning", "error");
+    return;
+  }
+
   const data = await res.json();
   planning = data.items || [];
 
@@ -593,13 +614,16 @@ async function loadPlanningData() {
     p.status || "Gepland"
   ]);
 
-  const tbl = document.getElementById("planningTable");
-  tbl.innerHTML = tableHTML(["Adres", "Klant", "Datum", "Member", "Opmerking", "Status"], rows);
+  tbl.innerHTML = tableHTML(
+    ["Adres", "Klant", "Datum", "Member", "Opmerking", "Status"],
+    rows
+  );
 
   tbl.querySelectorAll("tbody tr").forEach((tr, i) =>
     tr.addEventListener("click", () => openPlanningDetail(planning[i]))
   );
 
+  // 🔄 Eventlisteners (ongewijzigd)
   document.getElementById("planningFilter").onchange = loadPlanningData;
   document.getElementById("memberFilter").onchange = loadPlanningData;
   document.getElementById("customDate").onchange = loadPlanningData;
@@ -607,6 +631,7 @@ async function loadPlanningData() {
   document.getElementById("generatePlanningBtn").onclick = generatePlanning;
   document.getElementById("newPlanningBtn").onclick = openNewPlanningModal;
 }
+
 
 // ---------- Nieuw planning-item ----------
 async function openNewPlanningModal() {
