@@ -1413,35 +1413,50 @@ setInterval(async () => {
   try {
     switch (activeTab) {
       case "clients":
+        // ✅ Volledig herladen van clients (om nieuwe te tonen)
         await renderClients();
         break;
+
       case "contracts":
         await renderContracts();
         break;
+
       case "planning":
-        await renderPlanning();
+        // ✅ Alleen data verversen, filters behouden
+        await loadPlanningData();
         break;
+
       case "invoices":
         await renderInvoices();
         break;
+
       case "members":
         await renderMembers();
         break;
+
       case "emailLog":
         await renderEmailLog();
         break;
+
       case "leads":
         await renderLeads();
         break;
+
       case "quotes":
         await renderQuotes();
         break;
+
       case "settings":
         await renderSettings();
+        break;
+
+      default:
+        // Geen actief tabblad? doe niks
         break;
     }
   } catch (err) {
     console.warn("Auto-refresh fout:", err.message);
   }
 }, 30000); // elke 30 seconden automatisch vernieuwen
+
 
