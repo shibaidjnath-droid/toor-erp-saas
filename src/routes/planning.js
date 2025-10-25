@@ -66,6 +66,7 @@ router.post("/", async (req, res) => {
     if (!contractId || !date)
       return res.status(400).json({ error: "contractId en date zijn verplicht" });
 
+    // 1️⃣ Eerst de planning aanmaken
     const { rows } = await pool.query(
       `INSERT INTO planning (id, contract_id, member_id, date, status, comment, created_at)
        VALUES ($1,$2,$3,$4,$5,$6,now())
@@ -73,12 +74,21 @@ router.post("/", async (req, res) => {
       [uuidv4(), contractId, memberId || null, new Date(date).toISOString(), status, comment]
     );
 
+    // 2️⃣ Daarna pas auto-assign proberen (niet blocking)
+    try {
+      await fetch(`${process.env.APP_URL}/api/planning/auto-assign/${rows[0].id}`, { method: "POST" });
+    } catch (e) {
+      console.warn("Auto-assign call failed:", e.message);
+    }
+
+    // 3️⃣ Antwoord teruggeven
     res.status(201).json(rows[0]);
   } catch (err) {
     console.error("Planning create error:", err);
     res.status(500).json({ error: "Failed to create planning item" });
   }
 });
+
 
 /**
  * ✅ PUT /api/planning/:id
@@ -242,6 +252,121 @@ router.post("/generate", async (req, res) => {
   } catch (err) {
     console.error("Planning generate error:", err);
     res.status(500).json({ error: "Failed to generate planning" });
+  }
+});
+/**
+ * ✅ Smart Planning Engine v2 – Auto-assign member op basis van ORS route-optimalisatie en €400-regel
+ * POST /api/planning/auto-assign/:id
+ */
+router.post("/auto-assign/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // 1️⃣ Haal planningrecord + contract + adres op
+    const { rows: pRows } = await pool.query(`
+      SELECT p.id, p.contract_id, p.member_id, p.date,
+             c.price_inc, c.contact_id,
+             ct.address, ct.house_number, ct.city
+      FROM planning p
+      JOIN contracts c ON c.id = p.contract_id
+      JOIN contacts ct ON ct.id = c.contact_id
+      WHERE p.id = $1
+    `, [id]);
+
+    if (!pRows.length) return res.status(404).json({ error: "Planning item niet gevonden" });
+    const P = pRows[0];
+
+    // Als al toegewezen -> niets doen
+    if (P.member_id) return res.json({ ok: true, alreadyAssigned: true });
+
+    // 2️⃣ Alle actieve members ophalen
+    const { rows: members } = await pool.query(`SELECT id, name FROM members WHERE active = true ORDER BY created_at ASC`);
+    if (!members.length) return res.json({ ok: true, assigned: false, reason: "no_active_members" });
+
+    const dayISO = new Date(P.date).toISOString().slice(0, 10);
+    const scores = [];
+
+    // 3️⃣ Helper: geocode met ORS
+    async function geocode(addr, hn, city) {
+      const query = [addr, hn, city].filter(Boolean).join(" ");
+      const url = `https://api.openrouteservice.org/geocode/search?api_key=${process.env.ORS_API_KEY}&text=${encodeURIComponent(query)}&boundary.country=NL`;
+      const r = await fetch(url);
+      if (!r.ok) return null;
+      const j = await r.json();
+      const f = j?.features?.[0]?.geometry?.coordinates;
+      return Array.isArray(f) ? { lon: f[0], lat: f[1] } : null;
+    }
+
+    // 4️⃣ Helper: afstand berekenen (km)
+    async function getDistanceKM(a, b) {
+      const url = `https://api.openrouteservice.org/v2/directions/driving-car?api_key=${process.env.ORS_API_KEY}`;
+      const body = { coordinates: [[a.lon, a.lat], [b.lon, b.lat]] };
+      const r = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      if (!r.ok) return 9999;
+      const j = await r.json();
+      const m = j?.routes?.[0]?.summary?.distance || 0;
+      return m / 1000;
+    }
+
+    // 5️⃣ Geocode nieuwe locatie
+    const Pcoord = await geocode(P.address, P.house_number, P.city);
+    if (!Pcoord) return res.json({ ok: true, assigned: false, reason: "geocode_failed" });
+
+    // 6️⃣ Per member berekenen
+    for (const M of members) {
+      // Dagplanning van member ophalen
+      const { rows: jobs } = await pool.query(`
+        SELECT p.id, c.price_inc, ct.address, ct.house_number, ct.city
+        FROM planning p
+        JOIN contracts c ON c.id = p.contract_id
+        JOIN contacts ct ON ct.id = c.contact_id
+        WHERE p.member_id = $1
+          AND p.date::date = $2::date
+          AND p.status <> 'Geannuleerd'
+      `, [M.id, dayISO]);
+
+      const total = jobs.reduce((t, x) => t + (Number(x.price_inc) || 0), 0);
+      const projected = total + (Number(P.price_inc) || 0);
+      if (projected > 400) {
+        // Over budget → penalty
+        scores.push({ memberId: M.id, score: 9999 });
+        continue;
+      }
+
+      // Route-impact berekenen
+      let routePenalty = 0;
+      if (jobs.length > 0) {
+        let minDist = 9999;
+        for (const j of jobs) {
+          const c = await geocode(j.address, j.house_number, j.city);
+          if (c) {
+            const d = await getDistanceKM(c, Pcoord);
+            if (d < minDist) minDist = d;
+          }
+        }
+        routePenalty = minDist;
+      }
+
+      scores.push({ memberId: M.id, score: routePenalty });
+    }
+
+    // 7️⃣ Beste kandidaat selecteren
+    scores.sort((a, b) => a.score - b.score);
+    const best = scores[0];
+    if (!best || best.score >= 9999) {
+      return res.json({ ok: true, assigned: false, reason: "no_good_candidate" });
+    }
+
+    // 8️⃣ Member toewijzen
+    await pool.query(`UPDATE planning SET member_id = $1 WHERE id = $2`, [best.memberId, id]);
+    return res.json({ ok: true, assigned: true, memberId: best.memberId });
+  } catch (err) {
+    console.error("Auto-assign error:", err);
+    res.status(500).json({ error: "Auto-assign failed" });
   }
 });
 

@@ -132,11 +132,21 @@ try {
 
       // --- 3️⃣ Automatisch eerste planningrecord (optioneel) ---
       if (newContract && newContract.next_visit) {
-        await pool.query(
-          `INSERT INTO planning (id, contract_id, date, status, created_at)
-           VALUES ($1,$2,$3,'Gepland',now())`,
-          [uuidv4(), contractId, newContract.next_visit]
-        );
+// ✅ Eerste planningrecord aanmaken en auto-assign starten
+const { rows: pRows } = await pool.query(
+  `INSERT INTO planning (id, contract_id, date, status, created_at)
+   VALUES ($1,$2,$3,'Gepland',now())
+   RETURNING id`,
+  [uuidv4(), contractId, newContract.next_visit]
+);
+
+// 🔁 Slimme member-toewijzing via Smart Planning Engine (niet blocking)
+try {
+  await fetch(`${process.env.APP_URL}/api/planning/auto-assign/${pRows[0].id}`, { method: "POST" });
+} catch (e) {
+  console.warn("Auto-assign call failed:", e.message);
+}
+
         console.log(`📅 Eerste planningrecord aangemaakt voor ${newClient.name}`);
       }
     }
