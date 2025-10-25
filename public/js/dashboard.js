@@ -610,86 +610,129 @@ async function loadPlanningData() {
 
 // ---------- Nieuw planning-item ----------
 async function openNewPlanningModal() {
-  // ✅ Contracten handmatig ophalen bij zoeken
-  async function searchContracts(term) {
+  // Contracten ophalen (voor caching)
+  let allContracts = [];
+  try {
     const res = await fetch("/api/contracts");
-    if (!res.ok) return [];
-    const all = await res.json();
-    term = term.toLowerCase();
-    return all.filter(c =>
-      (c.client_name || "").toLowerCase().includes(term) ||
-      (c.address || "").toLowerCase().includes(term) ||
-      (c.city || "").toLowerCase().includes(term)
-    ).slice(0, 20);
+    if (res.ok) allContracts = await res.json();
+  } catch {
+    showToast("Fout bij laden contracten", "error");
   }
 
-  // ✅ Bouw het modaal
+  // Bouw modaal met één zoekveld (autocomplete)
   openModal("Nieuw Planning-Item", [
-    { id: "searchTerm", label: "Zoek klant / adres", placeholder: "Bijv. Voorstraat of Jan" },
-    { id: "contractId", label: "Selecteer contract", type: "select", options: [] },
-    { id: "memberId", label: "Member", type: "select", options: members.map(m => m.name) },
-    { id: "date", label: "Datum", type: "date", value: new Date().toISOString().split("T")[0] },
-    { id: "status", label: "Status", type: "select", options: ["Gepland", "Afgerond", "Geannuleerd"], value: "Gepland" }
+    {
+      id: "contractSearch",
+      label: "Klant / Adres",
+      type: "custom",
+      render: () => `
+        <div class="relative">
+          <input id="contractSearchInput" type="text"
+            placeholder="Zoek klant of adres..."
+            class="w-full border rounded px-2 py-1 mb-1
+                   bg-white text-gray-800
+                   dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600">
+          <ul id="contractSearchList"
+              class="hidden max-h-40 overflow-y-auto border rounded absolute z-10 w-full
+                     bg-white dark:bg-gray-800 dark:border-gray-600"></ul>
+        </div>`
+    },
+    {
+      id: "memberId",
+      label: "Member",
+      type: "select",
+      options: members.map(m => m.name)
+    },
+    {
+      id: "date",
+      label: "Datum",
+      type: "date",
+      value: new Date().toISOString().split("T")[0]
+    },
+    {
+      id: "status",
+      label: "Status",
+      type: "select",
+      options: ["Gepland", "Afgerond", "Geannuleerd"],
+      value: "Gepland"
+    }
   ], async vals => {
+    // ⛔ Geen contract geselecteerd?
+    if (!document.getElementById("contractSearchInput").dataset.id) {
+      showToast("Selecteer eerst een klant / adres", "error");
+      return;
+    }
+
     const member = members.find(m => m.name === vals.memberId);
     const body = {
-      contractId: vals.contractId,
+      contractId: document.getElementById("contractSearchInput").dataset.id,
       memberId: member?.id || null,
       date: vals.date,
       status: vals.status
     };
+
     const r = await fetch("/api/planning", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
+
     if (r.ok) {
       showToast("Planning-item toegevoegd", "success");
       loadPlanningData();
     } else showToast("Fout bij aanmaken", "error");
   });
 
-  // ✅ Wacht tot modal in DOM zit voordat listeners toegevoegd worden
+  // ✅ Na render — activeer live zoeken
   setTimeout(() => {
-    const input = document.getElementById("searchTerm");
-    const select = document.getElementById("contractId");
-    if (!input || !select) return;
+    const input = document.getElementById("contractSearchInput");
+    const list = document.getElementById("contractSearchList");
+    if (!input || !list) return;
 
-    async function performSearch() {
-      const term = input.value.trim();
-      if (!term) return;
-      const matches = await searchContracts(term);
+    function showMatches(term) {
+      const matches = allContracts.filter(c =>
+        (c.client_name || "").toLowerCase().includes(term) ||
+        (c.address || "").toLowerCase().includes(term) ||
+        (c.city || "").toLowerCase().includes(term)
+      ).slice(0, 15);
+
       if (!matches.length) {
-        showToast("Geen contracten gevonden", "info");
-        select.innerHTML = "";
+        list.classList.add("hidden");
         return;
       }
-      select.innerHTML = matches.map(
-        c => `<option value="${c.id}">
-                ${c.client_name || "-"} – ${c.address || ""}, ${c.city || ""}
-              </option>`
-      ).join("");
-      showToast(`${matches.length} resultaten gevonden`, "success");
+
+      list.innerHTML = matches.map(c => `
+        <li data-id="${c.id}"
+            class="px-2 py-1 cursor-pointer hover:bg-blue-100 dark:hover:bg-gray-700">
+          ${c.client_name || "-"} – ${c.address || ""}, ${c.city || ""}
+        </li>`).join("");
+      list.classList.remove("hidden");
     }
 
-    // 🔍 Zoek bij Enter
-    input.addEventListener("keydown", e => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        performSearch();
+    // 🔍 Zoek tijdens typen
+    input.addEventListener("input", () => {
+      const term = input.value.toLowerCase().trim();
+      if (term.length >= 2) showMatches(term);
+      else list.classList.add("hidden");
+    });
+
+    // 🖱️ Selectie uit lijst
+    list.addEventListener("click", e => {
+      if (e.target.tagName === "LI") {
+        input.value = e.target.textContent.trim();
+        input.dataset.id = e.target.dataset.id;
+        list.classList.add("hidden");
       }
     });
 
-    // 🔍 Zoek bij typen (met delay)
-    let debounce;
-    input.addEventListener("input", () => {
-      clearTimeout(debounce);
-      debounce = setTimeout(() => {
-        if (input.value.trim().length >= 2) performSearch();
-      }, 400);
+    // Klik buiten dropdown sluit deze
+    document.addEventListener("click", e => {
+      if (!list.contains(e.target) && e.target !== input)
+        list.classList.add("hidden");
     });
-  }, 100); // wacht 100ms zodat modal volledig geladen is
+  }, 150);
 }
+
 
 
 // ---------- Detail bewerken ----------
