@@ -610,7 +610,7 @@ async function loadPlanningData() {
 
 // ---------- Nieuw planning-item ----------
 async function openNewPlanningModal() {
-  // Contracten handmatig ophalen bij zoeken
+  // ✅ Contracten handmatig ophalen bij zoeken
   async function searchContracts(term) {
     const res = await fetch("/api/contracts");
     if (!res.ok) return [];
@@ -623,19 +623,15 @@ async function openNewPlanningModal() {
     ).slice(0, 20);
   }
 
-  // Bouw het modaal
+  // ✅ Bouw het modaal
   openModal("Nieuw Planning-Item", [
     { id: "searchTerm", label: "Zoek klant / adres", placeholder: "Bijv. Voorstraat of Jan" },
-    { id: "contractId", label: "Selecteer contract", type: "select", options: [{ value: "", label: "Zoek en selecteer een contract", disabled: true, selected: true }] },
-    { id: "memberId", label: "Member", type: "select", options: members.map(m => ({ value: m.id, label: m.name })) },
+    { id: "contractId", label: "Selecteer contract", type: "select", options: [] },
+    { id: "memberId", label: "Member", type: "select", options: members.map(m => m.name) },
     { id: "date", label: "Datum", type: "date", value: new Date().toISOString().split("T")[0] },
     { id: "status", label: "Status", type: "select", options: ["Gepland", "Afgerond", "Geannuleerd"], value: "Gepland" }
   ], async vals => {
-    const member = members.find(m => String(m.id) === String(vals.memberId));
-    if (!vals.contractId || vals.contractId === "" || vals.contractId === undefined) {
-      showToast("Selecteer een geldig contract voordat je opslaat", "error");
-      return;
-    }
+    const member = members.find(m => m.name === vals.memberId);
     const body = {
       contractId: vals.contractId,
       memberId: member?.id || null,
@@ -649,48 +645,52 @@ async function openNewPlanningModal() {
     });
     if (r.ok) {
       showToast("Planning-item toegevoegd", "success");
-      await loadPlanningData();
+      loadPlanningData();
     } else showToast("Fout bij aanmaken", "error");
   });
 
-    // 🔍 Simpele maar robuuste zoekfunctie
-  const input = document.getElementById("searchTerm");
-  const select = document.getElementById("contractId");
+  // ✅ Wacht tot modal in DOM zit voordat listeners toegevoegd worden
+  setTimeout(() => {
+    const input = document.getElementById("searchTerm");
+    const select = document.getElementById("contractId");
+    if (!input || !select) return;
 
-  async function performSearch() {
-    const term = input.value.trim();
-    if (!term) return;
-    const matches = await searchContracts(term);
-    if (!matches.length) {
-      showToast("Geen contracten gevonden", "info");
-      select.innerHTML = "";
-      return;
+    async function performSearch() {
+      const term = input.value.trim();
+      if (!term) return;
+      const matches = await searchContracts(term);
+      if (!matches.length) {
+        showToast("Geen contracten gevonden", "info");
+        select.innerHTML = "";
+        return;
+      }
+      select.innerHTML = matches.map(
+        c => `<option value="${c.id}">
+                ${c.client_name || "-"} – ${c.address || ""}, ${c.city || ""}
+              </option>`
+      ).join("");
+      showToast(`${matches.length} resultaten gevonden`, "success");
     }
-    select.innerHTML = matches.map(
-      c => `<option value="${c.id}">
-              ${c.client_name || "-"} – ${c.address || ""}, ${c.city || ""}
-            </option>`
-    ).join("");
-    showToast(`${matches.length} resultaten gevonden`, "success");
-  }
 
-  // 👉 Zoek automatisch bij Enter
-  input.addEventListener("keydown", e => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      performSearch();
-    }
-  });
+    // 🔍 Zoek bij Enter
+    input.addEventListener("keydown", e => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        performSearch();
+      }
+    });
 
-  // 👉 Of bij typen (met kleine vertraging)
-  let debounce;
-  input.addEventListener("input", () => {
-    clearTimeout(debounce);
-    debounce = setTimeout(() => {
-      if (input.value.trim().length >= 2) performSearch();
-    }, 400);
-  });
+    // 🔍 Zoek bij typen (met delay)
+    let debounce;
+    input.addEventListener("input", () => {
+      clearTimeout(debounce);
+      debounce = setTimeout(() => {
+        if (input.value.trim().length >= 2) performSearch();
+      }, 400);
+    });
+  }, 100); // wacht 100ms zodat modal volledig geladen is
 }
+
 
 // ---------- Detail bewerken ----------
 function openPlanningDetail(p) {
