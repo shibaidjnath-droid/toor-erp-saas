@@ -1098,8 +1098,15 @@ function setupThemeButtons() {
 function openModal(title, fields, onSave, onDelete) {
   document.querySelectorAll(".modal-overlay").forEach(el => el.remove());
 
-  const overlay = document.createElement("div");
+ const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
+
+  // ✅ Klik buiten de modal sluit het formulier
+  overlay.addEventListener("click", e => {
+    if (e.target === overlay) {  // alleen als je op de achtergrond zelf klikt
+      overlay.remove();          // sluit het formulier
+    }
+  });
 
   const card = document.createElement("div");
   card.className = "modal-card";
@@ -1316,4 +1323,42 @@ function appendDebug(msg) {
   line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
   dbg.prepend(line);
 }
+// ===========================================================
+// 🔁 Auto-refresh functionaliteit (blijft in huidig tabblad)
+// ===========================================================
+setInterval(async () => {
+  try {
+    switch (activeTab) {
+      case "clients":
+        await renderClients();
+        break;
+      case "contracts":
+        await renderContracts();
+        break;
+      case "planning":
+        await renderPlanning();
+        break;
+      case "invoices":
+        await renderInvoices();
+        break;
+      case "members":
+        await renderMembers();
+        break;
+      case "emailLog":
+        await renderEmailLog();
+        break;
+      case "leads":
+        await renderLeads();
+        break;
+      case "quotes":
+        await renderQuotes();
+        break;
+      case "settings":
+        await renderSettings();
+        break;
+    }
+  } catch (err) {
+    console.warn("Auto-refresh fout:", err.message);
+  }
+}, 30000); // elke 30 seconden automatisch vernieuwen
 
