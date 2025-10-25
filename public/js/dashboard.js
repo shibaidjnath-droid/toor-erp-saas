@@ -768,33 +768,65 @@ function openPlanningDetail(p) {
         return;
       }
 
-      if (vals.status === "Geannuleerd") {
-        const herplan = confirm("Wil je her-inplannen volgens frequentie?\nOK = automatisch, Annuleren = zelf datum kiezen.");
-        if (herplan) {
-          const genRes = await fetch("/api/planning/generate", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ date: new Date().toISOString().split("T")[0] })
-          });
-          if (genRes.ok) showToast("Her-inplanning uitgevoerd", "success");
-          else showToast("Fout bij her-inplannen", "error");
-        } else {
-          const nieuwe = prompt("Kies nieuwe datum (YYYY-MM-DD):");
-          if (nieuwe) {
-            const newRes = await fetch("/api/planning", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                contractId: p.contract_id || p.contractId,
-                date: nieuwe,
-                status: "Gepland"
-              })
-            });
-            if (newRes.ok) showToast("Nieuwe afspraak ingepland", "success");
-            else showToast("Fout bij nieuwe afspraak", "error");
-          }
-        }
-      }
+if (vals.status === "Geannuleerd") {
+  const herplan = confirm(
+    "Wil je her-inplannen volgens frequentie?\n\nOK = automatisch, Annuleren = zelf datum kiezen."
+  );
+
+  if (herplan) {
+    // ✅ Automatisch herplannen
+    const resAuto = await fetch(`/api/planning/replan/${p.id}`, { method: "POST" });
+    if (resAuto.ok) {
+      showToast("Automatische herplanning aangemaakt", "success");
+      await loadPlanningData();
+    } else {
+      showToast("Fout bij automatisch herplannen", "error");
+    }
+  } else {
+// 📅 Handmatig datum kiezen met kalender
+const modal = document.createElement("div");
+modal.className = "modal-overlay-date";
+modal.innerHTML = `
+  <div class="modal-card-date space-y-4 dark:bg-gray-800">
+    <h3 class="text-lg font-semibold">Kies nieuwe datum</h3>
+    <input type="date" class="input w-full" id="manualDateInput"
+      value="${new Date().toISOString().split("T")[0]}" />
+    <div class="flex justify-end gap-2 mt-4">
+      <button id="cancelDate" class="btn btn-secondary">Annuleren</button>
+      <button id="okDate" class="btn btn-ok">Bevestigen</button>
+    </div>
+  </div>
+`;
+document.body.appendChild(modal);
+
+// Events
+modal.querySelector("#cancelDate").onclick = () => modal.remove();
+modal.querySelector("#okDate").onclick = async () => {
+  const nieuwe = modal.querySelector("#manualDateInput").value;
+  if (nieuwe) {
+    const resNew = await fetch("/api/planning", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contractId: p.contract_id || p.contractId,
+        date: nieuwe,
+        status: "Gepland",
+        comment: vals.comment || p.comment || null
+      })
+    });
+    if (resNew.ok) {
+      showToast("Nieuwe afspraak ingepland", "success");
+      await loadPlanningData();
+    } else {
+      showToast("Fout bij nieuwe afspraak", "error");
+    }
+  }
+  modal.remove();
+};
+
+  }
+}
+
 
       if (vals.status === "Afgerond")
         showToast("Afspraak afgerond — contract bijgewerkt", "info");

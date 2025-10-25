@@ -370,4 +370,62 @@ router.post("/auto-assign/:id", async (req, res) => {
   }
 });
 
+/**
+ * ✅ Herplan een bestaande afspraak automatisch volgens frequentie
+ * POST /api/planning/replan/:id
+ */
+router.post("/replan/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // 1️⃣ Huidige planning + contract ophalen
+    const { rows } = await pool.query(`
+      SELECT p.id, p.contract_id, p.member_id, p.date, p.comment,
+             c.frequency, c.contact_id
+      FROM planning p
+      JOIN contracts c ON c.id = p.contract_id
+      WHERE p.id = $1
+    `, [id]);
+    if (!rows.length) return res.status(404).json({ error: "Planning niet gevonden" });
+
+    const current = rows[0];
+
+    // 2️⃣ Frequentie → nieuwe datum berekenen
+    const base = new Date(current.date);
+    const next = new Date(base);
+    switch (current.frequency) {
+      case "3 weken": next.setDate(base.getDate() + 21); break;
+      case "4 weken": next.setDate(base.getDate() + 28); break;
+      case "6 weken": next.setDate(base.getDate() + 42); break;
+      case "8 weken": next.setDate(base.getDate() + 56); break;
+      case "12 weken": next.setDate(base.getDate() + 84); break;
+      case "Maand": next.setMonth(base.getMonth() + 1); break;
+      case "3 keer per jaar": next.setMonth(base.getMonth() + 4); break;
+      case "1 keer per jaar": next.setFullYear(base.getFullYear() + 1); break;
+      default: next.setMonth(base.getMonth() + 1);
+    }
+    const nextDate = next.toISOString().split("T")[0];
+
+    // 3️⃣ Nieuwe planningrecord aanmaken (comment meenemen)
+    const { rows: ins } = await pool.query(
+      `INSERT INTO planning (id, contract_id, member_id, date, status, comment, created_at)
+       VALUES ($1,$2,$3,$4,'Gepland',$5,now())
+       RETURNING id`,
+      [uuidv4(), current.contract_id, current.member_id || null, nextDate, current.comment || null]
+    );
+
+    // 4️⃣ Slimme membertoewijzing (indien nodig)
+    try {
+      await fetch(`${process.env.APP_URL}/api/planning/auto-assign/${ins[0].id}`, { method: "POST" });
+    } catch (e) {
+      console.warn("Auto-assign bij replan mislukt:", e.message);
+    }
+
+    res.json({ ok: true, newId: ins[0].id, nextDate });
+  } catch (err) {
+    console.error("Replan error:", err);
+    res.status(500).json({ error: "Failed to replan" });
+  }
+});
+
 export default router;
