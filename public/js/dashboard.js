@@ -783,26 +783,35 @@ if (vals.status === "Geannuleerd") {
       showToast("Fout bij automatisch herplannen", "error");
     }
   } else {
-// 📅 Handmatig datum kiezen met kalender
-const modal = document.createElement("div");
-modal.className = "modal-overlay-date";
-modal.innerHTML = `
-  <div class="modal-card-date space-y-4 dark:bg-gray-800">
-    <h3 class="text-lg font-semibold">Kies nieuwe datum</h3>
-    <input type="date" class="input w-full" id="manualDateInput"
-      value="${new Date().toISOString().split("T")[0]}" />
-    <div class="flex justify-end gap-2 mt-4">
-      <button id="cancelDate" class="btn btn-secondary">Annuleren</button>
-      <button id="okDate" class="btn btn-ok">Bevestigen</button>
-    </div>
+// ❌ Handmatig nieuwe datum kiezen (met nette modal)
+const overlay = document.createElement("div");
+overlay.className = "modal-overlay fixed inset-0 bg-black/40 flex items-center justify-center z-50";
+
+const card = document.createElement("div");
+card.className = "modal-card bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-xl space-y-4";
+card.innerHTML = `
+  <h3 class="text-lg font-semibold">Kies nieuwe datum</h3>
+  <input type="date" id="manualDateInput" class="input w-full"
+    min="${new Date().toISOString().split("T")[0]}"
+    value="${new Date().toISOString().split("T")[0]}" />
+  <div class="flex justify-end gap-2 mt-4">
+    <button id="cancelDate" class="btn btn-secondary">Annuleren</button>
+    <button id="okDate" class="btn btn-ok">Bevestigen</button>
   </div>
 `;
-document.body.appendChild(modal);
 
-// Events
-modal.querySelector("#cancelDate").onclick = () => modal.remove();
-modal.querySelector("#okDate").onclick = async () => {
-  const nieuwe = modal.querySelector("#manualDateInput").value;
+overlay.appendChild(card);
+document.body.appendChild(overlay);
+
+// Sluit bij klik buiten kaart (zoals openModal)
+overlay.addEventListener("click", (e) => {
+  if (e.target === overlay) overlay.remove();
+});
+
+// Knop-acties
+card.querySelector("#cancelDate").onclick = () => overlay.remove();
+card.querySelector("#okDate").onclick = async () => {
+  const nieuwe = card.querySelector("#manualDateInput").value;
   if (nieuwe) {
     const resNew = await fetch("/api/planning", {
       method: "POST",
@@ -821,8 +830,9 @@ modal.querySelector("#okDate").onclick = async () => {
       showToast("Fout bij nieuwe afspraak", "error");
     }
   }
-  modal.remove();
+  overlay.remove();
 };
+
 
   }
 }
