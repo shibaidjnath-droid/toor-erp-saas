@@ -488,16 +488,346 @@ function openContractDetail(c) {
 
 
 // ---------- 🗓️ Planning ----------
+
+// ---------- Nieuw planning-item ----------
+async function openNewPlanningModal() {
+  let allContracts = [];
+  try {
+    const res = await fetch("/api/contracts");
+    if (res.ok) allContracts = await res.json();
+  } catch {
+    showToast("Fout bij laden contracten", "error");
+  }
+
+  openModal("Nieuw Planning-Item", [
+    {
+      id: "contractSearch",
+      label: "Klant / Adres",
+      type: "custom",
+      render: () => `
+        <div class="relative">
+          <input id="contractSearchInput" type="text"
+            placeholder="Zoek klant of adres..."
+            class="w-full border rounded px-2 py-1 mb-1
+                   bg-white text-gray-800
+                   dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600">
+          <ul id="contractSearchList"
+              class="hidden max-h-40 overflow-y-auto border rounded absolute z-10 w-full
+                     bg-white dark:bg-gray-800 dark:border-gray-600"></ul>
+        </div>`
+    },
+    {
+      id: "memberId",
+      label: "Member",
+      type: "select",
+      options: members.map(m => m.name)
+    },
+    {
+      id: "date",
+      label: "Datum",
+      type: "date",
+      value: new Date().toISOString().split("T")[0]
+    },
+    {
+      id: "status",
+      label: "Status",
+      type: "select",
+      options: ["Gepland", "Afgerond", "Geannuleerd"],
+      value: "Gepland"
+    }
+  ], async vals => {
+    if (!document.getElementById("contractSearchInput").dataset.id) {
+      showToast("Selecteer eerst een klant / adres", "error");
+      return;
+    }
+
+    const member = members.find(m => m.name === vals.memberId);
+    const body = {
+      contractId: document.getElementById("contractSearchInput").dataset.id,
+      memberId: member?.id || null,
+      date: vals.date,
+      status: vals.status
+    };
+
+    const r = await fetch("/api/planning", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+
+    if (r.ok) {
+      showToast("Planning-item toegevoegd", "success");
+      loadPlanningData();
+    } else showToast("Fout bij aanmaken", "error");
+  });
+
+  // ✅ Live zoeken
+  setTimeout(() => {
+    const input = document.getElementById("contractSearchInput");
+    const list = document.getElementById("contractSearchList");
+    if (!input || !list) return;
+
+    function showMatches(term) {
+      const matches = allContracts.filter(c =>
+        (c.client_name || "").toLowerCase().includes(term) ||
+        (c.address || "").toLowerCase().includes(term) ||
+        (c.city || "").toLowerCase().includes(term)
+      ).slice(0, 15);
+
+      if (!matches.length) {
+        list.classList.add("hidden");
+        return;
+      }
+
+      list.innerHTML = matches.map(c => `
+        <li data-id="${c.id}"
+            class="px-2 py-1 cursor-pointer hover:bg-blue-100 dark:hover:bg-gray-700">
+          ${c.client_name || "-"} – ${c.address || ""}, ${c.city || ""}
+        </li>`).join("");
+      list.classList.remove("hidden");
+    }
+
+    input.addEventListener("input", () => {
+      const term = input.value.toLowerCase().trim();
+      if (term.length >= 2) showMatches(term);
+      else list.classList.add("hidden");
+    });
+
+    list.addEventListener("click", e => {
+      if (e.target.tagName === "LI") {
+        input.value = e.target.textContent.trim();
+        input.dataset.id = e.target.dataset.id;
+        list.classList.add("hidden");
+      }
+    });
+
+    document.addEventListener("click", e => {
+      if (!list.contains(e.target) && e.target !== input)
+        list.classList.add("hidden");
+    });
+  }, 150);
+}
+
+// ---------- Automatische generatie ----------
+async function generatePlanning() {
+  showToast("Planning wordt gegenereerd...", "info");
+  const r = await fetch("/api/planning/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ date: new Date().toISOString().split("T")[0] })
+  });
+  const d = await r.json();
+  if (r.ok) {
+    showToast(`Planning gegenereerd (${d.generated} taken)`, "success");
+    loadPlanningData();
+  } else showToast(d.error || "Fout bij genereren", "error");
+}
+
+// ---------- Data opnieuw laden ----------
+async function loadPlanningData() {
+  const filter = document.getElementById("planningFilter")?.value || "all";
+  const dateInput = document.getElementById("customDate");
+  const tbl = document.getElementById("planningTable");
+
+  if (filter === "date") {
+    dateInput.classList.remove("hidden");
+    if (!dateInput.value) {
+      planning = [];
+      tbl.innerHTML = `
+        <div class="text-gray-500 dark:text-gray-400 p-3 text-center">
+          Kies eerst een datum om planning te laden.
+        </div>`;
+      return;
+    }
+  } else {
+    dateInput.classList.add("hidden");
+  }
+
+  const memberId = document.getElementById("memberFilter")?.value || "";
+  const status = document.getElementById("statusFilter")?.value || "";
+
+  const url = new URL("/api/planning/schedule", window.location.origin);
+  url.searchParams.set("range", filter === "date" ? "day" : filter);
+  if (memberId) url.searchParams.set("memberId", memberId);
+  if (status) url.searchParams.set("status", status);
+  if (filter === "date" && dateInput.value)
+    url.searchParams.set("start", dateInput.value);
+
+  const res = await fetch(url);
+  if (!res.ok) {
+    showToast("Fout bij laden planning", "error");
+    return;
+  }
+
+  const data = await res.json();
+  planning = data.items || [];
+
+  const rows = planning.map(p => [
+    `${p.address || ""} ${p.house_number || ""}, ${p.city || ""}`,
+    p.customer || "-",
+    p.date ? p.date.split("T")[0] : "-",
+    p.member_name || "-",
+    p.comment || "-",
+    p.status || "Gepland",
+    p.cancel_reason || "-"
+  ]);
+
+  tbl.innerHTML = tableHTML(
+    ["Adres", "Klant", "Datum", "Member", "Opmerking", "Status", "Reden Geannuleerd"],
+    rows
+  );
+
+  tbl.querySelectorAll("tbody tr").forEach((tr, i) =>
+    tr.addEventListener("click", () => openPlanningDetail(planning[i]))
+  );
+
+  document.getElementById("planningFilter").onchange = loadPlanningData;
+  document.getElementById("memberFilter").onchange = loadPlanningData;
+  document.getElementById("customDate").onchange = loadPlanningData;
+  document.getElementById("statusFilter").onchange = loadPlanningData;
+
+  // ✅ Veiligheid: functies checken
+  const genBtn = document.getElementById("generatePlanningBtn");
+  if (genBtn && typeof generatePlanning === "function") genBtn.onclick = generatePlanning;
+
+  const newBtn = document.getElementById("newPlanningBtn");
+  if (newBtn && typeof openNewPlanningModal === "function") newBtn.onclick = openNewPlanningModal;
+}
+
+// ---------- Detail bewerken ----------
+function openPlanningDetail(p) {
+  if (!p) {
+    showToast("Ongeldig planning item", "error");
+    return;
+  }
+
+  openModal(`Planning – ${p.customer || "-"}`, [
+    { id: "address",  label: "Adres",  value: `${p.address || ""} ${p.house_number || ""}, ${p.city || ""}`, readonly: true },
+    { id: "customer", label: "Klant",  value: p.customer || "-", readonly: true },
+    { id: "date",     label: "Datum",  type: "date", value: p.date ? p.date.split("T")[0] : "" },
+    { id: "memberId", label: "Member", type: "select", options: (members || []).map(m => m.name), value: p.member_name || "" },
+    { id: "status",   label: "Status", type: "select", options: ["Gepland", "Afgerond", "Geannuleerd"], value: p.status || "Gepland" },
+    { id: "comment",  label: "Opmerking", type: "textarea", value: p.comment || "" },
+    { id: "invoiced", label: "Gefactureerd", type: "checkbox", value: !!p.invoiced },
+    {
+      id: "cancel_reason",
+      label: "Reden geannuleerd",
+      type: "select",
+      options: ["Door Ons", "Door Klant", "Contract stop gezet door klant", "Contract stop gezet door ons"],
+      value: p.cancel_reason || "",
+      hidden: (p.status !== "Geannuleerd")
+    }
+  ], async vals => {
+    try {
+      const member = members.find(m => m.name === vals.memberId);
+      const payload = {
+        memberId: member?.id || null,
+        date: vals.date,
+        status: vals.status,
+        comment: vals.comment || null,
+        invoiced: !!vals.invoiced,
+        cancel_reason: vals.cancel_reason || null
+      };
+
+      const updateRes = await fetch(`/api/planning/${p.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      if (!updateRes.ok) {
+        showToast("Fout bij opslaan planning item", "error");
+        return;
+      }
+
+      if (payload.status === "Geannuleerd") {
+        if (["Contract stop gezet door klant", "Contract stop gezet door ons"].includes(payload.cancel_reason)) {
+          showToast("Reeks geannuleerd", "success");
+          await loadPlanningData();
+          return;
+        }
+
+        const herplan = confirm("Wil je her-inplannen volgens frequentie?\n\nOK = automatisch, Annuleren = zelf datum kiezen.");
+        if (herplan) {
+          const resAuto = await fetch(`/api/planning/replan/${p.id}`, { method: "POST" });
+          if (resAuto.ok) {
+            showToast("Automatische herplanning aangemaakt", "success");
+            await loadPlanningData();
+          } else showToast("Fout bij automatisch herplannen", "error");
+        } else {
+          const overlay = document.createElement("div");
+          overlay.className = "modal-overlay fixed inset-0 bg-black/40 flex items-center justify-center z-50";
+          const card = document.createElement("div");
+          card.className = "modal-card bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-xl space-y-4";
+          card.innerHTML = `
+            <h3 class="text-lg font-semibold">Kies nieuwe datum</h3>
+            <input type="date" id="manualDateInput" class="input w-full"
+              min="${new Date().toISOString().split("T")[0]}"
+              value="${new Date().toISOString().split("T")[0]}" />
+            <div class="flex justify-end gap-2 mt-4">
+              <button id="cancelDate" class="btn btn-secondary">Annuleren</button>
+              <button id="okDate" class="btn btn-ok">Bevestigen</button>
+            </div>`;
+          overlay.appendChild(card);
+          document.body.appendChild(overlay);
+          overlay.addEventListener("click", e => { if (e.target === overlay) overlay.remove(); });
+          card.querySelector("#cancelDate").onclick = () => overlay.remove();
+          card.querySelector("#okDate").onclick = async () => {
+            const nieuwe = card.querySelector("#manualDateInput").value;
+            if (nieuwe) {
+              const resNew = await fetch("/api/planning", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  contractId: p.contract_id || p.contractId,
+                  date: nieuwe,
+                  status: "Gepland",
+                  comment: vals.comment || p.comment || null
+                })
+              });
+              if (resNew.ok) {
+                showToast("Nieuwe afspraak ingepland", "success");
+                await loadPlanningData();
+              } else showToast("Fout bij nieuwe afspraak", "error");
+            }
+            overlay.remove();
+          };
+        }
+      }
+
+      if (payload.status === "Afgerond")
+        showToast("Afspraak afgerond — contract bijgewerkt", "info");
+
+      await loadPlanningData();
+    } catch (err) {
+      console.error("❌ Fout bij opslaan planning item:", err);
+      showToast("Onverwachte fout bij opslaan planning item", "error");
+    }
+  });
+
+  // 🔹 Dynamisch tonen/verbergen van "Reden geannuleerd"
+  setTimeout(() => {
+    const statusSel = document.querySelector("select[name='status']");
+    const reasonField = document.querySelector("[name='cancel_reason']")?.closest(".form-field");
+    if (statusSel && reasonField) {
+      const toggleReason = () => {
+        reasonField.style.display = statusSel.value === "Geannuleerd" ? "block" : "none";
+      };
+      toggleReason();
+      statusSel.addEventListener("change", toggleReason);
+    }
+  }, 0);
+}
+
+// ---------- Hoofd-render ----------
 async function renderPlanning() {
   const list = document.getElementById("planningList");
 
-  // ✅ Members laden (voor filters en modals)
   if (!Array.isArray(members) || !members.length) {
     const mRes = await fetch("/api/members");
     if (mRes.ok) members = await mRes.json();
   }
 
-  // ✅ Planning laden
   const range = "all";
   const url = new URL("/api/planning/schedule", window.location.origin);
   url.searchParams.set("range", range);
@@ -510,7 +840,6 @@ async function renderPlanning() {
 
   planning = (await res.json()).items || [];
 
-  // ✅ Filters + knoppen (bovenaan)
   const controlsHTML = `
   <div class="flex justify-between mb-4 flex-wrap gap-2">
     <h2 class="text-xl font-semibold">Planning</h2>
@@ -556,234 +885,10 @@ async function renderPlanning() {
       </button>
     </div>
   </div>
-  <div id="planningTable"></div>
-`;
+  <div id="planningTable"></div>`;
   list.innerHTML = controlsHTML;
 
   await loadPlanningData();
-}
-
-// ---------- Data opnieuw laden ----------
-async function loadPlanningData() {
-  const filter = document.getElementById("planningFilter")?.value || "all";
-  const dateInput = document.getElementById("customDate");
-  const tbl = document.getElementById("planningTable");
-
-  // 🔹 Toon of verberg datumveld
-  if (filter === "date") {
-    dateInput.classList.remove("hidden");
-
-    // 🛑 Geen datum gekozen → niks tonen en geen fetch
-    if (!dateInput.value) {
-      planning = [];
-      tbl.innerHTML = `
-        <div class="text-gray-500 dark:text-gray-400 p-3 text-center">
-          Kies eerst een datum om planning te laden.
-        </div>`;
-      return; // Stop hier
-    }
-  } else {
-    dateInput.classList.add("hidden");
-  }
-
-  const memberId = document.getElementById("memberFilter")?.value || "";
-  const status = document.getElementById("statusFilter")?.value || "";
-
-  const url = new URL("/api/planning/schedule", window.location.origin);
-  url.searchParams.set("range", filter === "date" ? "day" : filter);
-  if (memberId) url.searchParams.set("memberId", memberId);
-  if (status) url.searchParams.set("status", status);
-  if (filter === "date" && dateInput.value)
-    url.searchParams.set("start", dateInput.value);
-
-  const res = await fetch(url);
-  if (!res.ok) {
-    showToast("Fout bij laden planning", "error");
-    return;
-  }
-
-  const data = await res.json();
-  planning = data.items || [];
-
-  const rows = planning.map(p => [
-    `${p.address || ""} ${p.house_number || ""}, ${p.city || ""}`,
-    p.customer || "-",
-    p.date ? p.date.split("T")[0] : "-",
-    p.member_name || "-",
-    p.comment || "-",
-    p.status || "Gepland",
-    p.cancel_reason || "-" // ✅ nieuwe kolom
-  ]);
-
-  tbl.innerHTML = tableHTML(
-    ["Adres", "Klant", "Datum", "Member", "Opmerking", "Status", "Reden Geannuleerd"],
-    rows
-  );
-
-  tbl.querySelectorAll("tbody tr").forEach((tr, i) =>
-    tr.addEventListener("click", () => openPlanningDetail(planning[i]))
-  );
-
-  // 🔄 Eventlisteners
-  document.getElementById("planningFilter").onchange = loadPlanningData;
-  document.getElementById("memberFilter").onchange = loadPlanningData;
-  document.getElementById("customDate").onchange = loadPlanningData;
-  document.getElementById("statusFilter").onchange = loadPlanningData;
-
-  // ✅ Veiligheid: check of functie bestaat
-  const genBtn = document.getElementById("generatePlanningBtn");
-  if (genBtn && typeof generatePlanning === "function") {
-    genBtn.onclick = generatePlanning;
-  }
-
-  const newBtn = document.getElementById("newPlanningBtn");
-  if (newBtn) newBtn.onclick = openNewPlanningModal;
-}
-
-// ---------- Detail bewerken ----------
-function openPlanningDetail(p) {
-  if (!p) {
-    showToast("Ongeldig planning item", "error");
-    return;
-  }
-
-  openModal(`Planning – ${p.customer || "-"}`, [
-    { id: "address",  label: "Adres",  value: `${p.address || ""} ${p.house_number || ""}, ${p.city || ""}`, readonly: true },
-    { id: "customer", label: "Klant",  value: p.customer || "-", readonly: true },
-    { id: "date",     label: "Datum",  type: "date", value: p.date ? p.date.split("T")[0] : "" },
-    { id: "memberId", label: "Member", type: "select", options: (members || []).map(m => m.name), value: p.member_name || "" },
-    { id: "status",   label: "Status", type: "select", options: ["Gepland", "Afgerond", "Geannuleerd"], value: p.status || "Gepland" },
-    { id: "comment",  label: "Opmerking", type: "textarea", value: p.comment || "" },
-    { id: "invoiced", label: "Gefactureerd", type: "checkbox", value: !!p.invoiced },
-    {
-      id: "cancel_reason",
-      label: "Reden geannuleerd",
-      type: "select",
-      options: ["Door Ons", "Door Klant", "Contract stop gezet door klant", "Contract stop gezet door ons"],
-      value: p.cancel_reason || "",
-      hidden: (p.status !== "Geannuleerd")
-    }
-  ], async vals => {
-    try {
-      const member = members.find(m => m.name === vals.memberId);
-
-
-      // ---- Basis update ----
-      const payload = {
-        memberId: member?.id || null,
-        date: vals.date,
-        status: vals.status,
-        comment: vals.comment || null,
-        invoiced: !!vals.invoiced,
-        cancel_reason: vals.cancel_reason || null
-      };
-
-      const updateRes = await fetch(`/api/planning/${p.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-
-      if (!updateRes.ok) {
-        showToast("Fout bij opslaan planning item", "error");
-        return;
-      }
-
-      // === Geannuleerd ===
-      if (payload.status === "Geannuleerd") {
-        // ❌ Contract stopgezet → hele reeks annuleren (geen herplanprompt)
-        if (["Contract stop gezet door klant", "Contract stop gezet door ons"].includes(payload.cancel_reason)) {
-          showToast("Reeks geannuleerd", "success");
-          await loadPlanningData();
-          return;
-        }
-
-        // ✅ Overige redenen → bestaand gedrag (optie F)
-        const herplan = confirm(
-          "Wil je her-inplannen volgens frequentie?\n\nOK = automatisch, Annuleren = zelf datum kiezen."
-        );
-
-        if (herplan) {
-          // Automatisch herplannen
-          const resAuto = await fetch(`/api/planning/replan/${p.id}`, { method: "POST" });
-          if (resAuto.ok) {
-            showToast("Automatische herplanning aangemaakt", "success");
-            await loadPlanningData();
-          } else {
-            showToast("Fout bij automatisch herplannen", "error");
-          }
-        } else {
-          // Handmatige datumkeuze (kalendermodal)
-          const overlay = document.createElement("div");
-          overlay.className = "modal-overlay fixed inset-0 bg-black/40 flex items-center justify-center z-50";
-
-          const card = document.createElement("div");
-          card.className = "modal-card bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-xl space-y-4";
-          card.innerHTML = `
-            <h3 class="text-lg font-semibold">Kies nieuwe datum</h3>
-            <input type="date" id="manualDateInput" class="input w-full"
-              min="${new Date().toISOString().split("T")[0]}"
-              value="${new Date().toISOString().split("T")[0]}" />
-            <div class="flex justify-end gap-2 mt-4">
-              <button id="cancelDate" class="btn btn-secondary">Annuleren</button>
-              <button id="okDate" class="btn btn-ok">Bevestigen</button>
-            </div>
-          `;
-
-          overlay.appendChild(card);
-          document.body.appendChild(overlay);
-
-          overlay.addEventListener("click", e => { if (e.target === overlay) overlay.remove(); });
-          card.querySelector("#cancelDate").onclick = () => overlay.remove();
-
-          card.querySelector("#okDate").onclick = async () => {
-            const nieuwe = card.querySelector("#manualDateInput").value;
-            if (nieuwe) {
-              const resNew = await fetch("/api/planning", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  contractId: p.contract_id || p.contractId,
-                  date: nieuwe,
-                  status: "Gepland",
-                  comment: vals.comment || p.comment || null
-                })
-              });
-              if (resNew.ok) {
-                showToast("Nieuwe afspraak ingepland", "success");
-                await loadPlanningData();
-              } else {
-                showToast("Fout bij nieuwe afspraak", "error");
-              }
-            }
-            overlay.remove();
-          };
-        }
-      }
-
-      if (payload.status === "Afgerond")
-        showToast("Afspraak afgerond — contract bijgewerkt", "info");
-
-      await loadPlanningData();
-    } catch (err) {
-      console.error("❌ Fout bij opslaan planning item:", err);
-      showToast("Onverwachte fout bij opslaan planning item", "error");
-    }
-  });
-        // 🔹 Toon/verberg "Reden geannuleerd" wanneer status verandert
-setTimeout(() => {
-  const statusSel = document.querySelector("select[name='status']");
-  const reasonField = document.querySelector("[name='cancel_reason']")?.closest(".form-field");
-
-  if (statusSel && reasonField) {
-    const toggleReason = () => {
-      reasonField.style.display = statusSel.value === "Geannuleerd" ? "block" : "none";
-    };
-    toggleReason(); // initiale toestand
-    statusSel.addEventListener("change", toggleReason);
-  }
-}, 0);
-
 }
 
 // ---------- Facturen ----------
