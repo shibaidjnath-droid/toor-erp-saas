@@ -693,11 +693,25 @@ function choosePlanningType() {
     }
   ], async (vals) => {
     if (vals.choice === "Ad-hoc planning") {
-      openNewPlanningModal(); // bestaand proces
+      openNewPlanningModal();      // bestaand ad-hoc proces
     } else {
-      openFrequencyPlanningModal(); // nieuwe modal
+      openFrequencyPlanningModal(); // nieuw: updaten volgens frequentie
     }
   });
+
+  // 🔹 Knoptekst dynamisch aanpassen op basis van keuze
+  setTimeout(() => {
+    const card   = document.querySelector(".modal-card");
+    const saveBtn = card?.querySelector("#save");
+    const select  = card?.querySelector("select[name='choice']");
+    if (!saveBtn || !select) return;
+
+    const updateLabel = () => {
+      saveBtn.textContent = (select.value === "Ad-hoc planning") ? "Creëren" : "Updaten";
+    };
+    updateLabel();
+    select.addEventListener("change", updateLabel);
+  }, 0);
 }
 
 
