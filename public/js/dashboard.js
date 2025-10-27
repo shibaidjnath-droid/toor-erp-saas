@@ -622,6 +622,82 @@ async function openNewPlanningModal() {
       if (!list.contains(e.target) && e.target !== input) list.classList.add("hidden");
     });
   }, 50); // kleine delay zodat modal-HTML staat
+
+  // ---------- Planning updaten volgens frequentie ----------
+async function openFrequencyPlanningModal() {
+  // contracts ophalen
+  let allContracts = [];
+  try {
+    const res = await fetch("/api/contracts");
+    if (res.ok) allContracts = await res.json();
+  } catch {
+    showToast("Fout bij laden contracten", "error");
+    return;
+  }
+
+  openModal("Planning updaten volgens frequentie", [
+    {
+      id: "contractId",
+      label: "Klant / Adres",
+      type: "select",
+      options: allContracts.map(c =>
+        `${c.client_name || "-"} – ${c.address || ""} ${c.city || ""}`),
+    },
+    { id: "memberId", label: "Toegewezen medewerker", type: "select", options: members.map(m => m.name) },
+    { id: "startDate", label: "Startdatum", type: "date", value: new Date().toISOString().split("T")[0] }
+  ], async (vals) => {
+    const sel = allContracts.find(c =>
+      `${c.client_name || "-"} – ${c.address || ""} ${c.city || ""}` === vals.contractId
+    );
+    if (!sel) return showToast("Selecteer een geldig contract", "error");
+
+    const memberObj = members.find(m => m.name === vals.memberId);
+    const memberId = memberObj ? memberObj.id : null;
+
+    const body = {
+      contractId: sel.id,
+      memberId,
+      startDate: vals.startDate
+    };
+
+    try {
+      const res = await fetch("/api/planning/update-frequency", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(`Planning vernieuwd (${data.updated || 0} items)`, "success");
+        await loadPlanningData();
+      } else {
+        showToast(data.error || "Fout bij bijwerken frequentie", "error");
+      }
+    } catch (err) {
+      console.error("❌ update-frequency fout:", err);
+      showToast("Onverwachte fout bij update", "error");
+    }
+  });
+}
+
+}
+// ---------- Nieuw planning item: keuze ----------
+function choosePlanningType() {
+  openModal("Nieuw Planning-item", [
+    {
+      id: "choice",
+      label: "Kies type planning",
+      type: "select",
+      options: ["Ad-hoc planning", "Planning updaten volgens frequentie"],
+      value: "Ad-hoc planning"
+    }
+  ], async (vals) => {
+    if (vals.choice === "Ad-hoc planning") {
+      openNewPlanningModal(); // bestaand proces
+    } else {
+      openFrequencyPlanningModal(); // nieuwe modal
+    }
+  });
 }
 
 
@@ -707,8 +783,9 @@ async function loadPlanningData() {
   const genBtn = document.getElementById("generatePlanningBtn");
   if (genBtn && typeof generatePlanning === "function") genBtn.onclick = generatePlanning;
 
-  const newBtn = document.getElementById("newPlanningBtn");
-  if (newBtn && typeof openNewPlanningModal === "function") newBtn.onclick = openNewPlanningModal;
+const newBtn = document.getElementById("newPlanningBtn");
+if (newBtn) newBtn.onclick = choosePlanningType;
+
 }
 
 // ---------- Detail bewerken ----------

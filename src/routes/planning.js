@@ -456,5 +456,48 @@ router.post("/replan/:id", async (req, res) => {
     res.status(500).json({ error: "Failed to replan" });
   }
 });
+/** ✅ POST – planning updaten volgens frequentie */
+router.post("/update-frequency", async (req, res) => {
+  try {
+    const { contractId, memberId, startDate } = req.body;
+    if (!contractId || !startDate)
+      return res.status(400).json({ error: "contractId en startDate verplicht" });
+
+    // frequentie van contract ophalen
+    const contractRes = await pool.query(
+      "SELECT frequency FROM contracts WHERE id=$1",
+      [contractId]
+    );
+    if (!contractRes.rowCount)
+      return res.status(404).json({ error: "Contract niet gevonden" });
+
+    const { computeNextVisit } = await import("./contracts.js");
+    const freq = contractRes.rows[0].frequency || "Maand";
+
+    // eerste datum = startDate
+    let current = new Date(startDate);
+    const updated = [];
+
+    // maak 6 toekomstige afspraken (max 6 maanden/iteraties)
+    for (let i = 0; i < 6; i++) {
+      const id = uuidv4();
+      await pool.query(
+        `INSERT INTO planning (id, contract_id, member_id, date, status, created_at)
+         VALUES ($1,$2,$3,$4,'Gepland',now())
+         ON CONFLICT (contract_id, date) DO UPDATE 
+         SET member_id=EXCLUDED.member_id, status='Gepland'`,
+        [id, contractId, memberId, current.toISOString()]
+      );
+      updated.push(current.toISOString());
+      current = new Date(computeNextVisit(current, freq));
+    }
+
+    res.json({ updated: updated.length });
+  } catch (err) {
+    console.error("❌ Fout bij update-frequency:", err.message);
+    res.status(500).json({ error: "Update frequentie mislukt" });
+  }
+});
+
 
 export default router;
