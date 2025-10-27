@@ -71,7 +71,7 @@ router.post("/", async (req, res) => {
     // 1️⃣ Eerst de planning aanmaken
     const { rows } = await pool.query(
       `INSERT INTO planning (id, contract_id, member_id, date, status, comment, invoiced, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7now())
+       VALUES ($1,$2,$3,$4,$5,$6,$7, now())
        RETURNING *`,
       [uuidv4(), contractId, memberId || null, new Date(date).toISOString(), status, comment, !!invoiced]
     );

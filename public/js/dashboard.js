@@ -572,67 +572,91 @@ async function openNewPlanningModal() {
       const newItem = await res.json();
       showToast("Planning-item toegevoegd", "success");
       await loadPlanningData();
-      planning.unshift(newItem);
-      renderPlanning();
     } catch (err) {
       console.error("❌ Fout bij opslaan planning:", err);
       showToast("Onverwachte fout bij opslaan planning", "error");
     }
   });
 
-  // ✅ 6. Autocomplete logica
-  const input = document.querySelector("#contractSearch");
-  const container = document.createElement("div");
-  container.className = "bg-white dark:bg-gray-800 border rounded mt-1 shadow-lg absolute z-50 w-full hidden";
-  input.parentElement.appendChild(container);
+// ✅ 6. Autocomplete logica (robust: wacht tot input bestaat + fallback id)
+(function initAutocomplete() {
+  const MAX_TRIES = 50;
+  let tries = 0;
 
-  input.addEventListener("input", (e) => {
-    const q = e.target.value.toLowerCase();
-    if (q.length < 2) {
-      container.classList.add("hidden");
+  const tick = () => {
+    // probeer beide ids (nieuw: #contractSearch, oud: #contractSearchInput)
+    const input =
+      document.querySelector("#contractSearch") ||
+      document.querySelector("#contractSearchInput");
+    if (!input) {
+      if (tries++ < MAX_TRIES) return requestAnimationFrame(tick);
+      console.error("❌ contractSearch input niet gevonden");
+      showToast("Kon zoekveld niet initialiseren", "error");
       return;
     }
 
-    const matches = allContracts.filter(c =>
-      (c.client_name && c.client_name.toLowerCase().includes(q)) ||
-      (c.description && c.description.toLowerCase().includes(q)) ||
-      (c.address && c.address.toLowerCase().includes(q))
-    ).slice(0, 8); // max 8 suggesties
+    // container veilig aan de DOM hangen
+    const host = input.parentElement || input.closest(".form-field") || input;
+    const container = document.createElement("div");
+    container.className = "bg-white dark:bg-gray-800 border rounded mt-1 shadow-lg absolute z-50 w-full hidden";
+    host.appendChild(container);
 
-    if (!matches.length) {
-      container.innerHTML = `<div class="p-2 text-gray-500">Geen resultaten</div>`;
-      container.classList.remove("hidden");
-      return;
-    }
-
-    container.innerHTML = matches.map(c => `
-      <div class="p-2 hover:bg-blue-100 dark:hover:bg-gray-700 cursor-pointer"
-           data-id="${c.id}">
-        <strong>${c.client_name || "Onbekend"}</strong> – 
-        ${c.description || "-"}<br>
-        <small class="text-gray-500">${c.address || ""} ${c.house_number || ""}, ${c.city || ""}</small>
-      </div>
-    `).join("");
-
-    container.classList.remove("hidden");
-
-    // Klik op een optie
-    container.querySelectorAll("div[data-id]").forEach(el => {
-      el.addEventListener("click", () => {
-        selectedContractId = el.dataset.id;
-        input.value = el.textContent.trim();
-        container.classList.add("hidden");
-      });
+    // voorkom dat Enter meteen submit
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") e.preventDefault();
     });
-  });
 
-  // ✅ Sluit dropdown bij klik buiten
-  document.addEventListener("click", (e) => {
-    if (!container.contains(e.target) && e.target !== input) {
-      container.classList.add("hidden");
-    }
-  });
+    const renderMatches = (matches) => {
+      if (!matches.length) {
+        container.innerHTML = `<div class="p-2 text-gray-500">Geen resultaten</div>`;
+        container.classList.remove("hidden");
+        return;
+      }
+      container.innerHTML = matches.map(c => `
+        <div class="p-2 hover:bg-blue-100 dark:hover:bg-gray-700 cursor-pointer"
+             data-id="${c.id}">
+          <strong>${c.client_name || "Onbekend"}</strong> – ${c.description || "-"}<br>
+          <small class="text-gray-500">${c.address || ""} ${c.house_number || ""}, ${c.city || ""}</small>
+        </div>
+      `).join("");
+      container.classList.remove("hidden");
+
+      container.querySelectorAll("[data-id]").forEach(el => {
+        el.addEventListener("click", () => {
+          // stash id op input.dataset.id (blijft compatibel met je submit code)
+          selectedContractId = el.dataset.id; 
+          input.value = el.textContent.trim();
+          input.dataset.id = el.dataset.id;
+          container.classList.add("hidden");
+        });
+      });
+    };
+
+    input.addEventListener("input", (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      if (q.length < 2) return container.classList.add("hidden");
+
+      const matches = allContracts.filter(c =>
+        (c.client_name || "").toLowerCase().includes(q) ||
+        (c.description || "").toLowerCase().includes(q) ||
+        (c.address || "").toLowerCase().includes(q) ||
+        (c.city || "").toLowerCase().includes(q)
+      ).slice(0, 12);
+
+      renderMatches(matches);
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!container.contains(e.target) && e.target !== input) {
+        container.classList.add("hidden");
+      }
+    });
+  };
+
+  requestAnimationFrame(tick);
+})();
 }
+
 
 
 // ---------- Automatische generatie ----------
