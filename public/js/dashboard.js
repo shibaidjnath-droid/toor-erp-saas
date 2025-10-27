@@ -501,6 +501,40 @@ async function openNewPlanningModal() {
 
   let selectedContractId = null;
 
+  // ---------- Nieuw planning item: keuze ----------
+
+  function choosePlanningType() {
+  openModal("Nieuw Planning-item", [
+    {
+      id: "choice",
+      label: "Kies type planning",
+      type: "select",
+      options: ["Ad-hoc planning", "Planning updaten volgens frequentie"],
+      value: "Ad-hoc planning"
+    }
+  ], async (vals) => {
+    if (vals.choice === "Ad-hoc planning") {
+      openNewPlanningModal();        // bestaand ad-hoc proces
+    } else {
+      openFrequencyPlanningModal();  // << deze functie MOET bestaan (zie stap 2)
+    }
+  });
+
+  // Knoptekst dynamisch aanpassen
+  setTimeout(() => {
+    const card = document.querySelector(".modal-card");
+    const saveBtn = card?.querySelector("#save");
+    const select  = card?.querySelector("select[name='choice']");
+    if (!saveBtn || !select) return;
+    const updateLabel = () => {
+      saveBtn.textContent = (select.value === "Ad-hoc planning") ? "Creëren" : "Updaten";
+    };
+    updateLabel();
+    select.addEventListener("change", updateLabel);
+  }, 0);
+}
+
+
   // ✅ 2. Modal openen – zoekveld als custom HTML met gegarandeerde id
   openModal("Nieuw Planning-item", [
     {
@@ -623,17 +657,7 @@ async function openNewPlanningModal() {
     });
   }, 50); // kleine delay zodat modal-HTML staat
 
- // ---------- Planning updaten volgens frequentie ----------
-async function openFrequencyPlanningModal() {
-  // contracts ophalen (met adresvelden)
-  let allContracts = [];
-  try {
-    const res = await fetch("/api/contracts");
-    if (res.ok) allContracts = await res.json();
-  } catch {
-    showToast("Fout bij laden contracten", "error");
-    return;
-  }
+}
 
   let selectedContractId = null;
 
@@ -747,25 +771,7 @@ async function openFrequencyPlanningModal() {
       if (!list.contains(e.target) && e.target !== input) list.classList.add("hidden");
     });
   }, 50);
-}
-}
-// ---------- Nieuw planning item: keuze ----------
-function choosePlanningType() {
-  openModal("Nieuw Planning-item", [
-    {
-      id: "choice",
-      label: "Kies type planning",
-      type: "select",
-      options: ["Ad-hoc planning", "Planning updaten volgens frequentie"],
-      value: "Ad-hoc planning"
-    }
-  ], async (vals) => {
-    if (vals.choice === "Ad-hoc planning") {
-      openNewPlanningModal();      // bestaand ad-hoc proces
-    } else {
-      openFrequencyPlanningModal(); // nieuw: updaten volgens frequentie
-    }
-  });
+
 
   // 🔹 Knoptekst dynamisch aanpassen op basis van keuze
   setTimeout(() => {
@@ -780,6 +786,130 @@ function choosePlanningType() {
     updateLabel();
     select.addEventListener("change", updateLabel);
   }, 0);
+
+
+// ---------- Planning updaten volgens frequentie ----------
+async function openFrequencyPlanningModal() {
+  // contracts ophalen
+  let allContracts = [];
+  try {
+    const res = await fetch("/api/contracts");
+    if (res.ok) allContracts = await res.json();
+  } catch {
+    showToast("Fout bij laden contracten", "error");
+    return;
+  }
+
+  let selectedContractId = null;
+
+  openModal("Planning updaten volgens frequentie", [
+    {
+      id: "contractSearch",
+      label: "Klant / Adres",
+      type: "custom",
+      render: () => `
+        <div class="relative">
+          <input id="freqContractSearchInput" name="contractSearch" type="text"
+            placeholder="Typ klantnaam of adres..."
+            class="w-full border rounded px-2 py-1 mb-1
+                   bg-white text-gray-800
+                   dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600">
+          <div id="freqContractSearchList"
+               class="hidden max-h-40 overflow-y-auto border rounded absolute z-50 w-full
+                      bg-white dark:bg-gray-800 dark:border-gray-600"></div>
+        </div>`
+    },
+    { id: "memberId", label: "Toegewezen medewerker", type: "select", options: (members||[]).map(m => m.name) },
+    { id: "startDate", label: "Startdatum", type: "date", value: new Date().toISOString().split("T")[0] }
+  ], async (vals) => {
+    if (!selectedContractId) return showToast("Selecteer eerst een geldig contract", "error");
+    if (!vals.startDate)     return showToast("Startdatum is verplicht", "error");
+
+    const memberObj = (members||[]).find(m => m.name === vals.memberId);
+    const memberId  = memberObj ? memberObj.id : null;
+
+    try {
+      const res = await fetch("/api/planning/update-frequency", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contractId: selectedContractId,
+          memberId,
+          startDate: vals.startDate
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) return showToast(data.error || "Fout bij bijwerken frequentie", "error");
+
+      showToast(`Planning vernieuwd (${data.updated || 0} items)`, "success");
+      await loadPlanningData();
+    } catch (err) {
+      console.error("❌ update-frequency fout:", err);
+      showToast("Onverwachte fout bij update", "error");
+    }
+  });
+
+  // Zet knoptekst van deze modal expliciet op "Updaten"
+  setTimeout(() => {
+    const card = document.querySelector(".modal-card");
+    const saveBtn = card?.querySelector("#save");
+    if (saveBtn) saveBtn.textContent = "Updaten";
+  }, 0);
+
+  // Autocomplete binnen de modal
+  setTimeout(() => {
+    const modal = document.querySelector(".modal-card");
+    if (!modal) return;
+
+    const input = modal.querySelector("#freqContractSearchInput");
+    const list  = modal.querySelector("#freqContractSearchList");
+    if (!input || !list) {
+      showToast("Kon zoekveld niet initialiseren", "error");
+      return;
+    }
+
+    input.addEventListener("keydown", e => { if (e.key === "Enter") e.preventDefault(); });
+
+    const renderMatches = (matches) => {
+      if (!matches.length) {
+        list.innerHTML = `<div class="p-2 text-gray-500">Geen resultaten</div>`;
+        list.classList.remove("hidden");
+        return;
+      }
+      list.innerHTML = matches.map(c => `
+        <div class="p-2 hover:bg-blue-100 dark:hover:bg-gray-700 cursor-pointer" data-id="${c.id}">
+          <strong>${c.client_name || "Onbekend"}</strong> – ${c.description || "-"}<br>
+          <small class="text-gray-500">${c.address || ""} ${c.house_number || ""}, ${c.city || ""}</small>
+        </div>
+      `).join("");
+      list.classList.remove("hidden");
+
+      list.querySelectorAll("[data-id]").forEach(el => {
+        el.addEventListener("click", () => {
+          selectedContractId = el.dataset.id;
+          input.value = el.textContent.trim();
+          input.dataset.id = el.dataset.id;
+          list.classList.add("hidden");
+        });
+      });
+    };
+
+    input.addEventListener("input", (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      if (q.length < 2) return list.classList.add("hidden");
+      const matches = allContracts.filter(c =>
+        (c.client_name || "").toLowerCase().includes(q) ||
+        (c.description || "").toLowerCase().includes(q) ||
+        (c.address || "").toLowerCase().includes(q) ||
+        (c.city || "").toLowerCase().includes(q)
+      ).slice(0, 12);
+      renderMatches(matches);
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!list.contains(e.target) && e.target !== input) list.classList.add("hidden");
+    });
+  }, 50);
 }
 
 
@@ -866,7 +996,7 @@ async function loadPlanningData() {
   if (genBtn && typeof generatePlanning === "function") genBtn.onclick = generatePlanning;
 
 const newBtn = document.getElementById("newPlanningBtn");
-if (newBtn) newBtn.onclick = choosePlanningType;
+if (newBtn && typeof choosePlanningType === "function") newBtn.onclick = choosePlanningType;
 
 }
 
