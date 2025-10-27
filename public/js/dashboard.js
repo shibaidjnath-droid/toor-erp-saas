@@ -787,6 +787,7 @@ function openPlanningDetail(p) {
     try {
       const member = members.find(m => m.name === vals.memberId);
 
+
       // ---- Basis update ----
       const payload = {
         memberId: member?.id || null,
@@ -807,19 +808,6 @@ function openPlanningDetail(p) {
         showToast("Fout bij opslaan planning item", "error");
         return;
       }
-// 🔹 Toon/verberg "Reden geannuleerd" wanneer status verandert
-setTimeout(() => {
-  const statusSel = document.querySelector("select[name='status']");
-  const reasonField = document.querySelector("[name='cancel_reason']")?.closest(".form-field");
-
-  if (statusSel && reasonField) {
-    const toggleReason = () => {
-      reasonField.style.display = statusSel.value === "Geannuleerd" ? "block" : "none";
-    };
-    toggleReason(); // initiale toestand
-    statusSel.addEventListener("change", toggleReason);
-  }
-}, 0);
 
       // === Geannuleerd ===
       if (payload.status === "Geannuleerd") {
@@ -902,6 +890,20 @@ setTimeout(() => {
       showToast("Onverwachte fout bij opslaan planning item", "error");
     }
   });
+        // 🔹 Toon/verberg "Reden geannuleerd" wanneer status verandert
+setTimeout(() => {
+  const statusSel = document.querySelector("select[name='status']");
+  const reasonField = document.querySelector("[name='cancel_reason']")?.closest(".form-field");
+
+  if (statusSel && reasonField) {
+    const toggleReason = () => {
+      reasonField.style.display = statusSel.value === "Geannuleerd" ? "block" : "none";
+    };
+    toggleReason(); // initiale toestand
+    statusSel.addEventListener("change", toggleReason);
+  }
+}, 0);
+
 }
 
 // ---------- Facturen ----------
