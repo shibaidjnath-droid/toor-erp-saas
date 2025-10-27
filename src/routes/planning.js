@@ -36,6 +36,7 @@ router.get("/schedule", async (req, res) => {
     const { rows } = await pool.query(
       `SELECT 
          p.id, p.contract_id, p.member_id, p.date, p.status, p.comment,
+         p.invoiced,
          c.contact_id AS client_id, ct.name AS customer,
          ct.address, ct.house_number, ct.city,
          m.name AS member_name
@@ -62,16 +63,16 @@ router.get("/schedule", async (req, res) => {
  */
 router.post("/", async (req, res) => {
   try {
-    const { contractId, memberId, date, status = "Gepland", comment = null } = req.body;
+    const { contractId, memberId, date, status = "Gepland", comment = null, invoiced = false } = req.body;
     if (!contractId || !date)
       return res.status(400).json({ error: "contractId en date zijn verplicht" });
 
     // 1️⃣ Eerst de planning aanmaken
     const { rows } = await pool.query(
-      `INSERT INTO planning (id, contract_id, member_id, date, status, comment, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,now())
+      `INSERT INTO planning (id, contract_id, member_id, date, status, comment, invoiced, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7now())
        RETURNING *`,
-      [uuidv4(), contractId, memberId || null, new Date(date).toISOString(), status, comment]
+      [uuidv4(), contractId, memberId || null, new Date(date).toISOString(), status, comment, !!invoiced]
     );
 
     // 2️⃣ Daarna pas auto-assign proberen (niet blocking)
@@ -92,14 +93,14 @@ router.post("/", async (req, res) => {
 
 /**
  * ✅ PUT /api/planning/:id
- * Update bestaand planningrecord (datum, member, status, comment)
+ * Update bestaand planningrecord (datum, member, status, comment, invoiced, cancel_reason)
  * + automatische contract-update bij Afgerond
  */
 router.put("/:id", async (req, res) => {
   try {
-    const { memberId, date, status, comment } = req.body;
+    const { memberId, date, status, comment, invoiced, cancel_reason } = req.body;
 
-    // Huidig record + frequentie ophalen
+    // 1️⃣ Huidig record + frequentie ophalen
     const { rows: currentRows } = await pool.query(
       `SELECT p.*, c.frequency, c.id AS contract_id
        FROM planning p
@@ -109,28 +110,53 @@ router.put("/:id", async (req, res) => {
     );
     if (!currentRows.length)
       return res.status(404).json({ error: "Planning item niet gevonden" });
+
     const current = currentRows[0];
 
-    // Basisupdate
+    // 2️⃣ Basisupdate
     const { rows } = await pool.query(
       `UPDATE planning
        SET member_id = COALESCE($1, member_id),
            date = COALESCE($2, date),
            status = COALESCE($3, status),
-           comment = COALESCE($4, comment)
-       WHERE id = $5
+           comment = COALESCE($4, comment),
+           invoiced = COALESCE($5, invoiced),
+           cancel_reason = COALESCE($6, cancel_reason)
+       WHERE id = $7
        RETURNING *`,
       [
         memberId || null,
         date ? new Date(date).toISOString() : null,
         status || null,
         comment || null,
+        typeof invoiced === "boolean" ? invoiced : null,
+        cancel_reason || null,
         req.params.id
       ]
     );
+
     const updated = rows[0];
 
-    // Extra logica bij statuswijziging
+    // 3️⃣ Nieuwe logica voor geannuleerd met reden
+    if (status === "Geannuleerd") {
+      if (["Contract stop gezet door klant", "Contract stop gezet door ons"].includes(cancel_reason)) {
+        // ❌ Reeks stoppen: alle toekomstige items voor dit contract op 'Geannuleerd' zetten
+        await pool.query(
+          `UPDATE planning
+           SET status = 'Geannuleerd',
+               cancel_reason = COALESCE(cancel_reason, $1)
+           WHERE contract_id = $2 AND date >= $3`,
+          [cancel_reason, updated.contract_id, updated.date]
+        );
+        console.log(`🛑 Volledige reeks geannuleerd voor contract ${updated.contract_id}`);
+        // Geen automatische herplanning in dit pad
+      } else {
+        // ✅ "Door Ons" / "Door Klant": laat huidige (front-end) herplanflow intact (optie F)
+        console.log(`ℹ️ Geannuleerd met reden "${cancel_reason}" – herplanopties toegestaan`);
+      }
+    }
+
+    // 4️⃣ Extra logica bij statuswijziging
     if (status === "Afgerond") {
       const computeNextVisit = (lastVisit, freq) => {
         const base = new Date(lastVisit);
@@ -151,10 +177,11 @@ router.put("/:id", async (req, res) => {
 
       const lastVisit = new Date(updated.date).toISOString();
       const next = computeNextVisit(lastVisit, current.frequency);
+
       await pool.query(
         `UPDATE contracts
-         SET last_visit=$1, next_visit=$2
-         WHERE id=$3`,
+         SET last_visit = $1, next_visit = $2
+         WHERE id = $3`,
         [lastVisit, next, current.contract_id]
       );
       console.log(`✅ Contract ${current.contract_id} bijgewerkt na Afgerond`);
@@ -170,6 +197,7 @@ router.put("/:id", async (req, res) => {
     res.status(500).json({ error: "Database update error" });
   }
 });
+
 
 /**
  * ✅ DELETE /api/planning/:id

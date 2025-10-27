@@ -768,24 +768,39 @@ function openPlanningDetail(p) {
   }
 
   openModal(`Planning – ${p.customer || "-"}`, [
-    { id: "address", label: "Adres", value: `${p.address || ""} ${p.house_number || ""}, ${p.city || ""}`, readonly: true },
-    { id: "customer", label: "Klant", value: p.customer || "-", readonly: true },
-    { id: "date", label: "Datum", type: "date", value: p.date ? p.date.split("T")[0] : "" },
+    { id: "address",  label: "Adres",  value: `${p.address || ""} ${p.house_number || ""}, ${p.city || ""}`, readonly: true },
+    { id: "customer", label: "Klant",  value: p.customer || "-", readonly: true },
+    { id: "date",     label: "Datum",  type: "date", value: p.date ? p.date.split("T")[0] : "" },
     { id: "memberId", label: "Member", type: "select", options: (members || []).map(m => m.name), value: p.member_name || "" },
-    { id: "status", label: "Status", type: "select", options: ["Gepland","Afgerond","Geannuleerd"], value: p.status || "Gepland" },
-    { id: "comment", label: "Opmerking", type: "textarea", value: p.comment || "" },
+    { id: "status",   label: "Status", type: "select", options: ["Gepland", "Afgerond", "Geannuleerd"], value: p.status || "Gepland" },
+    { id: "comment",  label: "Opmerking", type: "textarea", value: p.comment || "" },
+    { id: "invoiced", label: "Gefactureerd", type: "checkbox", value: !!p.invoiced },
+    {
+      id: "cancel_reason",
+      label: "Reden geannuleerd",
+      type: "select",
+      options: ["Door Ons", "Door Klant", "Contract stop gezet door klant", "Contract stop gezet door ons"],
+      value: p.cancel_reason || "",
+      hidden: (p.status !== "Geannuleerd")
+    }
   ], async vals => {
     try {
       const member = members.find(m => m.name === vals.memberId);
+
+      // ---- Basis update ----
+      const payload = {
+        memberId: member?.id || null,
+        date: vals.date,
+        status: vals.status,
+        comment: vals.comment || null,
+        invoiced: !!vals.invoiced,
+        cancel_reason: vals.cancel_reason || null
+      };
+
       const updateRes = await fetch(`/api/planning/${p.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          memberId: member?.id || null,
-          date: vals.date,
-          status: vals.status,
-          comment: vals.comment
-        })
+        body: JSON.stringify(payload)
       });
 
       if (!updateRes.ok) {
@@ -793,102 +808,88 @@ function openPlanningDetail(p) {
         return;
       }
 
-if (vals.status === "Geannuleerd") {
-  const herplan = confirm(
-    "Wil je her-inplannen volgens frequentie?\n\nOK = automatisch, Annuleren = zelf datum kiezen."
-  );
+      // === Geannuleerd ===
+      if (payload.status === "Geannuleerd") {
+        // ❌ Contract stopgezet → hele reeks annuleren (geen herplanprompt)
+        if (["Contract stop gezet door klant", "Contract stop gezet door ons"].includes(payload.cancel_reason)) {
+          showToast("Reeks geannuleerd", "success");
+          await loadPlanningData();
+          return;
+        }
 
-  if (herplan) {
-    // ✅ Automatisch herplannen
-    const resAuto = await fetch(`/api/planning/replan/${p.id}`, { method: "POST" });
-    if (resAuto.ok) {
-      showToast("Automatische herplanning aangemaakt", "success");
-      await loadPlanningData();
-    } else {
-      showToast("Fout bij automatisch herplannen", "error");
-    }
-  } else {
-// ❌ Handmatig nieuwe datum kiezen (met nette modal)
-const overlay = document.createElement("div");
-overlay.className = "modal-overlay fixed inset-0 bg-black/40 flex items-center justify-center z-50";
+        // ✅ Overige redenen → bestaand gedrag (optie F)
+        const herplan = confirm(
+          "Wil je her-inplannen volgens frequentie?\n\nOK = automatisch, Annuleren = zelf datum kiezen."
+        );
 
-const card = document.createElement("div");
-card.className = "modal-card bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-xl space-y-4";
-card.innerHTML = `
-  <h3 class="text-lg font-semibold">Kies nieuwe datum</h3>
-  <input type="date" id="manualDateInput" class="input w-full"
-    min="${new Date().toISOString().split("T")[0]}"
-    value="${new Date().toISOString().split("T")[0]}" />
-  <div class="flex justify-end gap-2 mt-4">
-    <button id="cancelDate" class="btn btn-secondary">Annuleren</button>
-    <button id="okDate" class="btn btn-ok">Bevestigen</button>
-  </div>
-`;
+        if (herplan) {
+          // Automatisch herplannen
+          const resAuto = await fetch(`/api/planning/replan/${p.id}`, { method: "POST" });
+          if (resAuto.ok) {
+            showToast("Automatische herplanning aangemaakt", "success");
+            await loadPlanningData();
+          } else {
+            showToast("Fout bij automatisch herplannen", "error");
+          }
+        } else {
+          // Handmatige datumkeuze (kalendermodal)
+          const overlay = document.createElement("div");
+          overlay.className = "modal-overlay fixed inset-0 bg-black/40 flex items-center justify-center z-50";
 
-overlay.appendChild(card);
-document.body.appendChild(overlay);
+          const card = document.createElement("div");
+          card.className = "modal-card bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-xl space-y-4";
+          card.innerHTML = `
+            <h3 class="text-lg font-semibold">Kies nieuwe datum</h3>
+            <input type="date" id="manualDateInput" class="input w-full"
+              min="${new Date().toISOString().split("T")[0]}"
+              value="${new Date().toISOString().split("T")[0]}" />
+            <div class="flex justify-end gap-2 mt-4">
+              <button id="cancelDate" class="btn btn-secondary">Annuleren</button>
+              <button id="okDate" class="btn btn-ok">Bevestigen</button>
+            </div>
+          `;
 
-// Sluit bij klik buiten kaart (zoals openModal)
-overlay.addEventListener("click", (e) => {
-  if (e.target === overlay) overlay.remove();
-});
+          overlay.appendChild(card);
+          document.body.appendChild(overlay);
 
-// Knop-acties
-card.querySelector("#cancelDate").onclick = () => overlay.remove();
-card.querySelector("#okDate").onclick = async () => {
-  const nieuwe = card.querySelector("#manualDateInput").value;
-  if (nieuwe) {
-    const resNew = await fetch("/api/planning", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contractId: p.contract_id || p.contractId,
-        date: nieuwe,
-        status: "Gepland",
-        comment: vals.comment || p.comment || null
-      })
-    });
-    if (resNew.ok) {
-      showToast("Nieuwe afspraak ingepland", "success");
-      await loadPlanningData();
-    } else {
-      showToast("Fout bij nieuwe afspraak", "error");
-    }
-  }
-  overlay.remove();
-};
+          overlay.addEventListener("click", e => { if (e.target === overlay) overlay.remove(); });
+          card.querySelector("#cancelDate").onclick = () => overlay.remove();
 
+          card.querySelector("#okDate").onclick = async () => {
+            const nieuwe = card.querySelector("#manualDateInput").value;
+            if (nieuwe) {
+              const resNew = await fetch("/api/planning", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  contractId: p.contract_id || p.contractId,
+                  date: nieuwe,
+                  status: "Gepland",
+                  comment: vals.comment || p.comment || null
+                })
+              });
+              if (resNew.ok) {
+                showToast("Nieuwe afspraak ingepland", "success");
+                await loadPlanningData();
+              } else {
+                showToast("Fout bij nieuwe afspraak", "error");
+              }
+            }
+            overlay.remove();
+          };
+        }
+      }
 
-  }
-}
-
-
-      if (vals.status === "Afgerond")
+      if (payload.status === "Afgerond")
         showToast("Afspraak afgerond — contract bijgewerkt", "info");
 
-      loadPlanningData();
+      await loadPlanningData();
     } catch (err) {
       console.error("❌ Fout bij opslaan planning item:", err);
       showToast("Onverwachte fout bij opslaan planning item", "error");
     }
   });
 }
-
-// ---------- Automatische generatie ----------
-async function generatePlanning() {
-  showToast("Planning wordt gegenereerd...", "info");
-  const r = await fetch("/api/planning/generate", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ date: new Date().toISOString().split("T")[0] })
-  });
-  const d = await r.json();
-  if (r.ok) {
-    showToast(`Planning gegenereerd (${d.generated} taken)`, "success");
-    loadPlanningData();
-  } else showToast(d.error || "Fout bij genereren", "error");
-}
-
 
 // ---------- Facturen ----------
 function renderInvoices(){
@@ -1163,17 +1164,11 @@ function setupThemeButtons() {
 
 // ---------- Helpers ----------
 function openModal(title, fields, onSave, onDelete) {
+  // Sluit eerst eventueel openstaande modals
   document.querySelectorAll(".modal-overlay").forEach(el => el.remove());
 
- const overlay = document.createElement("div");
+  const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
-
-  // ✅ Klik buiten de modal sluit het formulier
-  overlay.addEventListener("click", e => {
-    if (e.target === overlay) {  // alleen als je op de achtergrond zelf klikt
-      overlay.remove();          // sluit het formulier
-    }
-  });
 
   const card = document.createElement("div");
   card.className = "modal-card";
@@ -1196,7 +1191,7 @@ function openModal(title, fields, onSave, onDelete) {
   const form = card.querySelector("#modalForm");
   const fieldsContainer = form.querySelector("#formFields");
 
-  // Velden opbouwen
+  // ---------- Velden opbouwen ----------
   fields.forEach(f => {
     const div = document.createElement("div");
     div.className = "form-field";
@@ -1251,6 +1246,13 @@ function openModal(title, fields, onSave, onDelete) {
         input.value = f.value || "";
         break;
 
+      case "checkbox":
+        input = document.createElement("input");
+        input.type = "checkbox";
+        input.name = f.id;
+        input.checked = !!f.value;
+        break;
+
       default:
         input = document.createElement("input");
         input.className = "input";
@@ -1265,11 +1267,10 @@ function openModal(title, fields, onSave, onDelete) {
     } else {
       div.prepend(label);
     }
-
     fieldsContainer.appendChild(div);
   });
 
-  // 🔹 Toon/verberg bedrijfsvelden bij typeKlant = Zakelijk
+  // ---------- Businessvelden toggle ----------
   const typeSelect = form.querySelector("[name='typeKlant']");
   if (typeSelect) {
     const toggleBusinessFields = () => {
@@ -1280,12 +1281,11 @@ function openModal(title, fields, onSave, onDelete) {
         if (field) field.style.display = isBusiness ? "block" : "none";
       });
     };
-
-    toggleBusinessFields(); // bij openen
+    toggleBusinessFields();
     typeSelect.addEventListener("change", toggleBusinessFields);
   }
 
-  // 🔹 Alleen tonen en activeren als onDelete bestaat
+  // ---------- Delete-knop ----------
   const delBtn = card.querySelector("#delBtn");
   if (onDelete) {
     delBtn.classList.remove("hidden");
@@ -1300,44 +1300,89 @@ function openModal(title, fields, onSave, onDelete) {
     delBtn.onclick = null;
   }
 
-  // 🔹 Annuleren sluit modal
-  card.querySelector("#cancel").onclick = () => overlay.remove();
-
-  // 🔹 Opslaan verwerkt formulier (met knopbeveiliging)
-form.onsubmit = async (e) => {
-  e.preventDefault();
-  const saveBtn = card.querySelector("#save");
   const cancelBtn = card.querySelector("#cancel");
+  cancelBtn.onclick = () => overlay.remove();
 
-  // 🟡 Knoppen tijdelijk uitschakelen
-  saveBtn.disabled = true;
-  cancelBtn.disabled = true;
-  saveBtn.textContent = "Opslaan...";
+  // ---------- Dirty-check ----------
+  function snapshot() {
+    const snap = {};
+    fields.forEach(f => {
+      if (f.type === "multiselect") {
+        snap[f.id] = Array.from(form.querySelectorAll(`input[name='${f.id}']:checked`)).map(x => x.value);
+      } else if (f.type === "checkbox") {
+        const inp = form.querySelector(`[name='${f.id}']`);
+        snap[f.id] = !!(inp && inp.checked);
+      } else {
+        const inp = form.querySelector(`[name='${f.id}']`);
+        snap[f.id] = inp ? inp.value : null;
+      }
+    });
+    return JSON.stringify(snap);
+  }
 
-  const vals = {};
-  fields.forEach(f => {
-    if (f.type === "multiselect") {
-      vals[f.id] = Array.from(
-        form.querySelectorAll(`input[name='${f.id}']:checked`)
-      ).map(x => x.value);
-    } else {
-      const inp = form.querySelector(`[name='${f.id}']`);
-      vals[f.id] = inp ? inp.value : null;
+  let initialSnap = snapshot();
+  let isDirty = false;
+  form.addEventListener("input", () => {
+    isDirty = snapshot() !== initialSnap;
+  });
+
+  // ---------- Klik buiten modal ----------
+  overlay.addEventListener("click", e => {
+    if (e.target !== overlay) return;
+    if (isDirty) {
+      showToast("Je hebt onopgeslagen wijzigingen. Gebruik Opslaan of Annuleren.", "info");
+      return;
+    }
+    overlay.remove();
+  });
+
+  // ---------- ESC-toets ----------
+  document.addEventListener("keydown", function escHandler(ev) {
+    if (ev.key === "Escape") {
+      if (document.body.contains(overlay)) {
+        if (isDirty) {
+          showToast("Je hebt onopgeslagen wijzigingen. Gebruik Opslaan of Annuleren.", "info");
+        } else {
+          overlay.remove();
+        }
+        ev.preventDefault();
+      }
     }
   });
 
-  try {
-    await onSave(vals);  // wacht netjes tot API-call klaar is
-    overlay.remove();    // sluit modal pas na succes
-  } catch (err) {
-    console.error("Form save error:", err);
-    showToast("Opslaan mislukt", "error");
-    saveBtn.disabled = false;
-    cancelBtn.disabled = false;
-    saveBtn.textContent = "Opslaan";
-  }
-};
+  // ---------- Opslaan (met knopbeveiliging) ----------
+  form.onsubmit = async e => {
+    e.preventDefault();
+    const saveBtn = card.querySelector("#save");
+    const cancelBtn = card.querySelector("#cancel");
+    saveBtn.disabled = true;
+    cancelBtn.disabled = true;
+    saveBtn.textContent = "Opslaan...";
 
+    const vals = {};
+    fields.forEach(f => {
+      if (f.type === "multiselect") {
+        vals[f.id] = Array.from(form.querySelectorAll(`input[name='${f.id}']:checked`)).map(x => x.value);
+      } else if (f.type === "checkbox") {
+        const inp = form.querySelector(`[name='${f.id}']`);
+        vals[f.id] = !!(inp && inp.checked);
+      } else {
+        const inp = form.querySelector(`[name='${f.id}']`);
+        vals[f.id] = inp ? inp.value : null;
+      }
+    });
+
+    try {
+      await onSave(vals);
+      overlay.remove();
+    } catch (err) {
+      console.error("Form save error:", err);
+      showToast("Opslaan mislukt", "error");
+      saveBtn.disabled = false;
+      cancelBtn.disabled = false;
+      saveBtn.textContent = "Opslaan";
+    }
+  };
 }
 
 // ---------- 🗓️ Bereken volgende bezoekdatum ----------
