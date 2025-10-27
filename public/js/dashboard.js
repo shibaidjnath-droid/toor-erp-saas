@@ -486,10 +486,9 @@ function openContractDetail(c) {
   }));
 }
 
-
 // ---------- Nieuw planning-item ----------
 async function openNewPlanningModal() {
-  // ✅ 1. Alle contracts laden voor lookup
+  // ✅ 1. Contracts laden
   let allContracts = [];
   try {
     const res = await fetch("/api/contracts");
@@ -502,54 +501,41 @@ async function openNewPlanningModal() {
 
   let selectedContractId = null;
 
-  // ✅ 2. Modal openen
+  // ✅ 2. Modal openen – zoekveld als custom HTML met gegarandeerde id
   openModal("Nieuw Planning-item", [
     {
       id: "contractSearch",
       label: "Klant / Adres",
-      placeholder: "Typ klantnaam of adres...",
-      type: "text"
+      type: "custom",
+      render: () => `
+        <div class="relative">
+          <input id="contractSearchInput" name="contractSearch" type="text"
+            placeholder="Typ klantnaam of adres..."
+            class="w-full border rounded px-2 py-1 mb-1
+                   bg-white text-gray-800
+                   dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600">
+          <div id="contractSearchList"
+               class="hidden max-h-40 overflow-y-auto border rounded absolute z-50 w-full
+                      bg-white dark:bg-gray-800 dark:border-gray-600"></div>
+        </div>`
     },
+    { id: "date", label: "Datum", type: "date", value: new Date().toISOString().split("T")[0] },
+    { id: "memberId", label: "Toegewezen medewerker", type: "select", options: members.map(m => m.name) },
     {
-      id: "date",
-      label: "Datum",
-      type: "date",
-      value: new Date().toISOString().split("T")[0]
+      id: "status", label: "Status", type: "select",
+      options: ["Gepland","In uitvoering","Afgerond","Geannuleerd"], value: "Gepland"
     },
-    {
-      id: "memberId",
-      label: "Toegewezen medewerker",
-      type: "select",
-      options: members.map(m => m.name)
-    },
-    {
-      id: "status",
-      label: "Status",
-      type: "select",
-      options: ["Gepland", "In uitvoering", "Afgerond", "Geannuleerd"],
-      value: "Gepland"
-    },
-    {
-      id: "comment",
-      label: "Opmerking",
-      type: "textarea"
-    }
+    { id: "comment", label: "Opmerking", type: "textarea" }
   ], async (vals) => {
-    // ✅ 3. Validatie vóór opslaan
-    if (!selectedContractId) {
-      showToast("Selecteer eerst een geldig contract", "error");
-      return;
-    }
-    if (!vals.date) {
-      showToast("Datum is verplicht", "error");
-      return;
-    }
+    // ✅ 3. Validatie
+    if (!selectedContractId) return showToast("Selecteer eerst een geldig contract", "error");
+    if (!vals.date) return showToast("Datum is verplicht", "error");
 
-    // ✅ 4. Mapping van member naam → ID
+    // ✅ 4. member naam -> id
     const memberObj = members.find(m => m.name === vals.memberId);
     const memberId = memberObj ? memberObj.id : null;
 
-    // ✅ 5. Planning aanmaken
+    // ✅ 5. POST /api/planning
     try {
       const res = await fetch("/api/planning", {
         method: "POST",
@@ -564,12 +550,12 @@ async function openNewPlanningModal() {
       });
 
       if (!res.ok) {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({}));
         showToast(`Fout bij opslaan: ${err.error || res.statusText}`, "error");
         return;
       }
 
-      const newItem = await res.json();
+      await res.json(); // niet lokaal pushen; we herladen netjes
       showToast("Planning-item toegevoegd", "success");
       await loadPlanningData();
     } catch (err) {
@@ -578,92 +564,65 @@ async function openNewPlanningModal() {
     }
   });
 
-// ✅ 6. Autocomplete logica (wacht kort tot modal is opgebouwd)
-setTimeout(() => {
-  (function initAutocomplete() {
-    const MAX_TRIES = 20;
-    let tries = 0;
+  // ✅ 6. Autocomplete: in de MODAL scopen (niet document-wijd)
+  setTimeout(() => {
+    const modal = document.querySelector(".modal-card"); // container van openModal
+    if (!modal) return showToast("Kon modal niet vinden", "error");
 
-    const tick = () => {
-      const input =
-        document.querySelector("#contractSearch") ||
-        document.querySelector("#contractSearchInput");
-      if (!input) {
-        if (tries++ < MAX_TRIES) return requestAnimationFrame(tick);
-        console.error("❌ contractSearch input niet gevonden");
-        showToast("Kon zoekveld niet initialiseren", "error");
+    const input = modal.querySelector("#contractSearchInput, #contractSearch, input[name='contractSearch']");
+    const list  = modal.querySelector("#contractSearchList");
+
+    if (!input || !list) {
+      console.error("❌ contractSearch input niet gevonden (in modal)");
+      showToast("Kon zoekveld niet initialiseren", "error");
+      return;
+    }
+
+    // Enter blokken
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") e.preventDefault(); });
+
+    const renderMatches = (matches) => {
+      if (!matches.length) {
+        list.innerHTML = `<div class="p-2 text-gray-500">Geen resultaten</div>`;
+        list.classList.remove("hidden");
         return;
       }
+      list.innerHTML = matches.map(c => `
+        <div class="p-2 hover:bg-blue-100 dark:hover:bg-gray-700 cursor-pointer" data-id="${c.id}">
+          <strong>${c.client_name || "Onbekend"}</strong> – ${c.description || "-"}<br>
+          <small class="text-gray-500">${c.address || ""} ${c.house_number || ""}, ${c.city || ""}</small>
+        </div>
+      `).join("");
+      list.classList.remove("hidden");
 
-      const host = input.parentElement || input.closest(".form-field") || input;
-      const container = document.createElement("div");
-      container.className =
-        "bg-white dark:bg-gray-800 border rounded mt-1 shadow-lg absolute z-50 w-full hidden";
-      host.appendChild(container);
-
-      input.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") e.preventDefault();
-      });
-
-      const renderMatches = (matches) => {
-        if (!matches.length) {
-          container.innerHTML = `<div class='p-2 text-gray-500'>Geen resultaten</div>`;
-          container.classList.remove("hidden");
-          return;
-        }
-        container.innerHTML = matches
-          .map(
-            (c) => `
-            <div class="p-2 hover:bg-blue-100 dark:hover:bg-gray-700 cursor-pointer"
-                 data-id="${c.id}">
-              <strong>${c.client_name || "Onbekend"}</strong> – ${c.description || "-"}<br>
-              <small class="text-gray-500">${c.address || ""} ${c.house_number || ""}, ${
-              c.city || ""
-            }</small>
-            </div>`
-          )
-          .join("");
-        container.classList.remove("hidden");
-
-        container.querySelectorAll("[data-id]").forEach((el) => {
-          el.addEventListener("click", () => {
-            selectedContractId = el.dataset.id;
-            input.value = el.textContent.trim();
-            input.dataset.id = el.dataset.id;
-            container.classList.add("hidden");
-          });
+      list.querySelectorAll("[data-id]").forEach(el => {
+        el.addEventListener("click", () => {
+          selectedContractId = el.dataset.id;         // ✅ sla contract-id op
+          input.value = el.textContent.trim();
+          input.dataset.id = el.dataset.id;
+          list.classList.add("hidden");
         });
-      };
-
-      input.addEventListener("input", (e) => {
-        const q = e.target.value.toLowerCase().trim();
-        if (q.length < 2) return container.classList.add("hidden");
-
-        const matches = allContracts
-          .filter(
-            (c) =>
-              (c.client_name || "").toLowerCase().includes(q) ||
-              (c.description || "").toLowerCase().includes(q) ||
-              (c.address || "").toLowerCase().includes(q) ||
-              (c.city || "").toLowerCase().includes(q)
-          )
-          .slice(0, 12);
-
-        renderMatches(matches);
-      });
-
-      document.addEventListener("click", (e) => {
-        if (!container.contains(e.target) && e.target !== input) {
-          container.classList.add("hidden");
-        }
       });
     };
 
-    requestAnimationFrame(tick);
-  })();
-}, 100);
-}
+    input.addEventListener("input", (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      if (q.length < 2) return list.classList.add("hidden");
+      const matches = allContracts.filter(c =>
+        (c.client_name || "").toLowerCase().includes(q) ||
+        (c.description || "").toLowerCase().includes(q) ||
+        (c.address || "").toLowerCase().includes(q) ||
+        (c.city || "").toLowerCase().includes(q)
+      ).slice(0, 12);
+      renderMatches(matches);
+    });
 
+    // klik buiten -> sluiten
+    document.addEventListener("click", (e) => {
+      if (!list.contains(e.target) && e.target !== input) list.classList.add("hidden");
+    });
+  }, 50); // kleine delay zodat modal-HTML staat
+}
 
 
 // ---------- Automatische generatie ----------
