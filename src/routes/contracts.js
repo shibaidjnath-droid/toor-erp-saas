@@ -29,14 +29,19 @@ export function computeNextVisit(lastVisit, frequency) {
   return d.toISOString();
 }
 
-/** ✅ GET – alle contracts */
+/** ✅ GET – alle contracts (inclusief klantadresgegevens) */
 router.get("/", async (_req, res) => {
   try {
     const { rows } = await pool.query(`
-      SELECT c.*, ct.name AS client_name
+      SELECT 
+        c.*,
+        ct.name AS client_name,
+        ct.address AS address,
+        ct.house_number AS house_number,
+        ct.city AS city
       FROM contracts c
       LEFT JOIN contacts ct ON c.contact_id = ct.id
-      ORDER BY c.created_at DESC
+      ORDER BY ct.name ASC
     `);
 
     const parsed = rows.map(r => ({
@@ -49,10 +54,11 @@ router.get("/", async (_req, res) => {
 
     res.json(parsed);
   } catch (err) {
-    console.error("❌ DB error:", err.message);
-    res.status(500).json({ error: "Database error" });
+    console.error("❌ DB error (GET /contracts):", err.message);
+    res.status(500).json({ error: "Database error bij ophalen contracts" });
   }
 });
+
 
 /** ✅ GET – één contract */
 router.get("/:id", async (req, res) => {
