@@ -1218,6 +1218,13 @@ function openModal(title, fields, onSave, onDelete) {
     let input;
 
     switch (f.type) {
+           case "custom":
+        div.innerHTML = `
+          <label>${f.label}</label>
+          ${typeof f.render === "function" ? f.render() : f.render || ""}
+        `;
+        fieldsContainer.appendChild(div);
+        return;
       case "select":
         input = document.createElement("select");
         input.className = "select";
