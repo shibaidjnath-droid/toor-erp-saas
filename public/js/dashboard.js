@@ -611,11 +611,12 @@ async function loadPlanningData() {
     p.date ? p.date.split("T")[0] : "-",
     p.member_name || "-",
     p.comment || "-",
-    p.status || "Gepland"
+    p.status || "Gepland",
+    p.cancel_reason || "-"
   ]);
 
   tbl.innerHTML = tableHTML(
-    ["Adres", "Klant", "Datum", "Member", "Opmerking", "Status"],
+    ["Adres", "Klant", "Datum", "Member", "Opmerking", "Status" , "Reden Geannuleerd"],
     rows
   );
 

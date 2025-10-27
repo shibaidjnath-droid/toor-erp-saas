@@ -36,6 +36,7 @@ router.get("/schedule", async (req, res) => {
     const { rows } = await pool.query(
       `SELECT 
          p.id, p.contract_id, p.member_id, p.date, p.status, p.comment,
+         p.cancel_reason,
          p.invoiced,
          c.contact_id AS client_id, ct.name AS customer,
          ct.address, ct.house_number, ct.city,
