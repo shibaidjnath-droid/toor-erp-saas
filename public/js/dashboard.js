@@ -487,40 +487,28 @@ function openContractDetail(c) {
 }
 
 
-// ---------- 🗓️ Planning ----------
-
 // ---------- Nieuw planning-item ----------
 async function openNewPlanningModal() {
+  // ✅ 1. Alle contracts laden voor lookup
   let allContracts = [];
   try {
     const res = await fetch("/api/contracts");
     if (res.ok) allContracts = await res.json();
-  } catch {
+  } catch (err) {
+    console.error("❌ Fout bij laden contracten:", err);
     showToast("Fout bij laden contracten", "error");
+    return;
   }
 
-  openModal("Nieuw Planning-Item", [
+  let selectedContractId = null;
+
+  // ✅ 2. Modal openen
+  openModal("Nieuw Planning-item", [
     {
       id: "contractSearch",
       label: "Klant / Adres",
-      type: "custom",
-      render: () => `
-        <div class="relative">
-          <input id="contractSearchInput" type="text"
-            placeholder="Zoek klant of adres..."
-            class="w-full border rounded px-2 py-1 mb-1
-                   bg-white text-gray-800
-                   dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600">
-          <ul id="contractSearchList"
-              class="hidden max-h-40 overflow-y-auto border rounded absolute z-10 w-full
-                     bg-white dark:bg-gray-800 dark:border-gray-600"></ul>
-        </div>`
-    },
-    {
-      id: "memberId",
-      label: "Member",
-      type: "select",
-      options: members.map(m => m.name)
+      placeholder: "Typ klantnaam of adres...",
+      type: "text"
     },
     {
       id: "date",
@@ -529,84 +517,123 @@ async function openNewPlanningModal() {
       value: new Date().toISOString().split("T")[0]
     },
     {
+      id: "memberId",
+      label: "Toegewezen medewerker",
+      type: "select",
+      options: members.map(m => m.name)
+    },
+    {
       id: "status",
       label: "Status",
       type: "select",
-      options: ["Gepland", "Afgerond", "Geannuleerd"],
+      options: ["Gepland", "In uitvoering", "Afgerond", "Geannuleerd"],
       value: "Gepland"
+    },
+    {
+      id: "comment",
+      label: "Opmerking",
+      type: "textarea"
     }
-  ], async vals => {
-    if (!document.getElementById("contractSearchInput").dataset.id) {
-      showToast("Selecteer eerst een klant / adres", "error");
+  ], async (vals) => {
+    // ✅ 3. Validatie vóór opslaan
+    if (!selectedContractId) {
+      showToast("Selecteer eerst een geldig contract", "error");
+      return;
+    }
+    if (!vals.date) {
+      showToast("Datum is verplicht", "error");
       return;
     }
 
-    const member = members.find(m => m.name === vals.memberId);
-    const body = {
-      contractId: document.getElementById("contractSearchInput").dataset.id,
-      memberId: member?.id || null,
-      date: vals.date,
-      status: vals.status
-    };
+    // ✅ 4. Mapping van member naam → ID
+    const memberObj = members.find(m => m.name === vals.memberId);
+    const memberId = memberObj ? memberObj.id : null;
 
-    const r = await fetch("/api/planning", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
+    // ✅ 5. Planning aanmaken
+    try {
+      const res = await fetch("/api/planning", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contractId: selectedContractId,
+          memberId,
+          date: vals.date,
+          status: vals.status,
+          comment: vals.comment
+        })
+      });
 
-    if (r.ok) {
-      showToast("Planning-item toegevoegd", "success");
-      loadPlanningData();
-    } else showToast("Fout bij aanmaken", "error");
-  });
-
-  // ✅ Live zoeken
-  setTimeout(() => {
-    const input = document.getElementById("contractSearchInput");
-    const list = document.getElementById("contractSearchList");
-    if (!input || !list) return;
-
-    function showMatches(term) {
-      const matches = allContracts.filter(c =>
-        (c.client_name || "").toLowerCase().includes(term) ||
-        (c.address || "").toLowerCase().includes(term) ||
-        (c.city || "").toLowerCase().includes(term)
-      ).slice(0, 15);
-
-      if (!matches.length) {
-        list.classList.add("hidden");
+      if (!res.ok) {
+        const err = await res.json();
+        showToast(`Fout bij opslaan: ${err.error || res.statusText}`, "error");
         return;
       }
 
-      list.innerHTML = matches.map(c => `
-        <li data-id="${c.id}"
-            class="px-2 py-1 cursor-pointer hover:bg-blue-100 dark:hover:bg-gray-700">
-          ${c.client_name || "-"} – ${c.address || ""}, ${c.city || ""}
-        </li>`).join("");
-      list.classList.remove("hidden");
+      const newItem = await res.json();
+      showToast("Planning-item toegevoegd", "success");
+      await loadPlanningData();
+      planning.unshift(newItem);
+      renderPlanning();
+    } catch (err) {
+      console.error("❌ Fout bij opslaan planning:", err);
+      showToast("Onverwachte fout bij opslaan planning", "error");
+    }
+  });
+
+  // ✅ 6. Autocomplete logica
+  const input = document.querySelector("#contractSearch");
+  const container = document.createElement("div");
+  container.className = "bg-white dark:bg-gray-800 border rounded mt-1 shadow-lg absolute z-50 w-full hidden";
+  input.parentElement.appendChild(container);
+
+  input.addEventListener("input", (e) => {
+    const q = e.target.value.toLowerCase();
+    if (q.length < 2) {
+      container.classList.add("hidden");
+      return;
     }
 
-    input.addEventListener("input", () => {
-      const term = input.value.toLowerCase().trim();
-      if (term.length >= 2) showMatches(term);
-      else list.classList.add("hidden");
-    });
+    const matches = allContracts.filter(c =>
+      (c.client_name && c.client_name.toLowerCase().includes(q)) ||
+      (c.description && c.description.toLowerCase().includes(q)) ||
+      (c.address && c.address.toLowerCase().includes(q))
+    ).slice(0, 8); // max 8 suggesties
 
-    list.addEventListener("click", e => {
-      if (e.target.tagName === "LI") {
-        input.value = e.target.textContent.trim();
-        input.dataset.id = e.target.dataset.id;
-        list.classList.add("hidden");
-      }
-    });
+    if (!matches.length) {
+      container.innerHTML = `<div class="p-2 text-gray-500">Geen resultaten</div>`;
+      container.classList.remove("hidden");
+      return;
+    }
 
-    document.addEventListener("click", e => {
-      if (!list.contains(e.target) && e.target !== input)
-        list.classList.add("hidden");
+    container.innerHTML = matches.map(c => `
+      <div class="p-2 hover:bg-blue-100 dark:hover:bg-gray-700 cursor-pointer"
+           data-id="${c.id}">
+        <strong>${c.client_name || "Onbekend"}</strong> – 
+        ${c.description || "-"}<br>
+        <small class="text-gray-500">${c.address || ""} ${c.house_number || ""}, ${c.city || ""}</small>
+      </div>
+    `).join("");
+
+    container.classList.remove("hidden");
+
+    // Klik op een optie
+    container.querySelectorAll("div[data-id]").forEach(el => {
+      el.addEventListener("click", () => {
+        selectedContractId = el.dataset.id;
+        input.value = el.textContent.trim();
+        container.classList.add("hidden");
+      });
     });
-  }, 150);
+  });
+
+  // ✅ Sluit dropdown bij klik buiten
+  document.addEventListener("click", (e) => {
+    if (!container.contains(e.target) && e.target !== input) {
+      container.classList.add("hidden");
+    }
+  });
 }
+
 
 // ---------- Automatische generatie ----------
 async function generatePlanning() {
