@@ -612,11 +612,11 @@ async function loadPlanningData() {
     p.member_name || "-",
     p.comment || "-",
     p.status || "Gepland",
-    p.cancel_reason || "-"
+    p.cancel_reason || "-" // ✅ nieuwe kolom
   ]);
 
   tbl.innerHTML = tableHTML(
-    ["Adres", "Klant", "Datum", "Member", "Opmerking", "Status" , "Reden Geannuleerd"],
+    ["Adres", "Klant", "Datum", "Member", "Opmerking", "Status", "Reden Geannuleerd"],
     rows
   );
 
@@ -624,142 +624,21 @@ async function loadPlanningData() {
     tr.addEventListener("click", () => openPlanningDetail(planning[i]))
   );
 
-  // 🔄 Eventlisteners (ongewijzigd)
+  // 🔄 Eventlisteners
   document.getElementById("planningFilter").onchange = loadPlanningData;
   document.getElementById("memberFilter").onchange = loadPlanningData;
   document.getElementById("customDate").onchange = loadPlanningData;
   document.getElementById("statusFilter").onchange = loadPlanningData;
-  document.getElementById("generatePlanningBtn").onclick = generatePlanning;
-  document.getElementById("newPlanningBtn").onclick = openNewPlanningModal;
-}
 
-
-// ---------- Nieuw planning-item ----------
-async function openNewPlanningModal() {
-  // Contracten ophalen (voor caching)
-  let allContracts = [];
-  try {
-    const res = await fetch("/api/contracts");
-    if (res.ok) allContracts = await res.json();
-  } catch {
-    showToast("Fout bij laden contracten", "error");
+  // ✅ Veiligheid: check of functie bestaat
+  const genBtn = document.getElementById("generatePlanningBtn");
+  if (genBtn && typeof generatePlanning === "function") {
+    genBtn.onclick = generatePlanning;
   }
 
-  // Bouw modaal met één zoekveld (autocomplete)
-  openModal("Nieuw Planning-Item", [
-    {
-      id: "contractSearch",
-      label: "Klant / Adres",
-      type: "custom",
-      render: () => `
-        <div class="relative">
-          <input id="contractSearchInput" type="text"
-            placeholder="Zoek klant of adres..."
-            class="w-full border rounded px-2 py-1 mb-1
-                   bg-white text-gray-800
-                   dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600">
-          <ul id="contractSearchList"
-              class="hidden max-h-40 overflow-y-auto border rounded absolute z-10 w-full
-                     bg-white dark:bg-gray-800 dark:border-gray-600"></ul>
-        </div>`
-    },
-    {
-      id: "memberId",
-      label: "Member",
-      type: "select",
-      options: members.map(m => m.name)
-    },
-    {
-      id: "date",
-      label: "Datum",
-      type: "date",
-      value: new Date().toISOString().split("T")[0]
-    },
-    {
-      id: "status",
-      label: "Status",
-      type: "select",
-      options: ["Gepland", "Afgerond", "Geannuleerd"],
-      value: "Gepland"
-    }
-  ], async vals => {
-    // ⛔ Geen contract geselecteerd?
-    if (!document.getElementById("contractSearchInput").dataset.id) {
-      showToast("Selecteer eerst een klant / adres", "error");
-      return;
-    }
-
-    const member = members.find(m => m.name === vals.memberId);
-    const body = {
-      contractId: document.getElementById("contractSearchInput").dataset.id,
-      memberId: member?.id || null,
-      date: vals.date,
-      status: vals.status
-    };
-
-    const r = await fetch("/api/planning", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
-
-    if (r.ok) {
-      showToast("Planning-item toegevoegd", "success");
-      loadPlanningData();
-    } else showToast("Fout bij aanmaken", "error");
-  });
-
-  // ✅ Na render — activeer live zoeken
-  setTimeout(() => {
-    const input = document.getElementById("contractSearchInput");
-    const list = document.getElementById("contractSearchList");
-    if (!input || !list) return;
-
-    function showMatches(term) {
-      const matches = allContracts.filter(c =>
-        (c.client_name || "").toLowerCase().includes(term) ||
-        (c.address || "").toLowerCase().includes(term) ||
-        (c.city || "").toLowerCase().includes(term)
-      ).slice(0, 15);
-
-      if (!matches.length) {
-        list.classList.add("hidden");
-        return;
-      }
-
-      list.innerHTML = matches.map(c => `
-        <li data-id="${c.id}"
-            class="px-2 py-1 cursor-pointer hover:bg-blue-100 dark:hover:bg-gray-700">
-          ${c.client_name || "-"} – ${c.address || ""}, ${c.city || ""}
-        </li>`).join("");
-      list.classList.remove("hidden");
-    }
-
-    // 🔍 Zoek tijdens typen
-    input.addEventListener("input", () => {
-      const term = input.value.toLowerCase().trim();
-      if (term.length >= 2) showMatches(term);
-      else list.classList.add("hidden");
-    });
-
-    // 🖱️ Selectie uit lijst
-    list.addEventListener("click", e => {
-      if (e.target.tagName === "LI") {
-        input.value = e.target.textContent.trim();
-        input.dataset.id = e.target.dataset.id;
-        list.classList.add("hidden");
-      }
-    });
-
-    // Klik buiten dropdown sluit deze
-    document.addEventListener("click", e => {
-      if (!list.contains(e.target) && e.target !== input)
-        list.classList.add("hidden");
-    });
-  }, 150);
+  const newBtn = document.getElementById("newPlanningBtn");
+  if (newBtn) newBtn.onclick = openNewPlanningModal;
 }
-
-
 
 // ---------- Detail bewerken ----------
 function openPlanningDetail(p) {
