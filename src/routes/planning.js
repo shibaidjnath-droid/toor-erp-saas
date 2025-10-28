@@ -5,14 +5,64 @@ import { v4 as uuidv4 } from "uuid";
 
 const router = express.Router();
 
+// ---------- 🧠 Slimme Planning Helpers ----------
+
+// Check of een member of contract al iets op die datum heeft
+async function hasConflict(date, memberId, contractId) {
+  const { rows } = await pool.query(
+    `SELECT 1 FROM planning
+     WHERE date::date = $1::date
+       AND (member_id = $2 OR contract_id = $3)
+     LIMIT 1`,
+    [date.toISOString(), memberId, contractId]
+  );
+  return rows.length > 0;
+}
+
+// Vind de beste werkdag rondom een datum (vrijdag / maandag als weekend of conflict)
+async function findBestWorkday(date, memberId, contractId) {
+  const d = new Date(date);
+  const day = d.getDay(); // 0=zo, 6=za
+
+  // Alleen correcties voor weekend
+  if (day === 6 || day === 0) {
+    const friday = new Date(d);
+    friday.setDate(d.getDate() - (day === 6 ? 1 : 2)); // zaterdag->vrijdag, zondag->vrijdag
+    const monday = new Date(d);
+    monday.setDate(d.getDate() + (day === 6 ? 2 : 1));
+
+    // Check vrijdag
+    const conflictFri = await hasConflict(friday, memberId, contractId);
+    if (!conflictFri) return friday;
+
+    // Check maandag
+    const conflictMon = await hasConflict(monday, memberId, contractId);
+    if (!conflictMon) return monday;
+
+    // Beide vol → standaard maandag
+    return monday;
+  }
+
+  // Geen weekend → neem oorspronkelijke dag
+  const conflict = await hasConflict(d, memberId, contractId);
+  if (!conflict) return d;
+
+  // Als er toch conflict is → schuif max 3 dagen vooruit
+  for (let i = 1; i <= 3; i++) {
+    const test = new Date(d);
+    test.setDate(d.getDate() + i);
+    const c = await hasConflict(test, memberId, contractId);
+    if (!c && test.getDay() >= 1 && test.getDay() <= 5) return test;
+  }
+
+  // fallback: originele datum
+  return d;
+}
+
 /* ===========================================================
    🗓️  Planning Endpoints
    =========================================================== */
 
-/**
- * ✅ GET /api/planning/schedule?range=week|month|today|year|all&memberId=&status=&start=
- * Haalt ingeplande records op uit planning-tabel, met joins en filters.
- */
 router.get("/schedule", async (req, res) => {
   try {
     const { range = "week", memberId, status, start } = req.query;
@@ -58,17 +108,12 @@ router.get("/schedule", async (req, res) => {
   }
 });
 
-/**
- * ✅ POST /api/planning
- * { contractId, memberId, date, status } → handmatig nieuw item
- */
 router.post("/", async (req, res) => {
   try {
     const { contractId, memberId, date, status = "Gepland", comment = null, invoiced = false } = req.body;
     if (!contractId || !date)
       return res.status(400).json({ error: "contractId en date zijn verplicht" });
 
-    // 1️⃣ Eerst de planning aanmaken
     const { rows } = await pool.query(
       `INSERT INTO planning (id, contract_id, member_id, date, status, comment, invoiced, created_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7, now())
@@ -76,14 +121,12 @@ router.post("/", async (req, res) => {
       [uuidv4(), contractId, memberId || null, new Date(date).toISOString(), status, comment, !!invoiced]
     );
 
-    // 2️⃣ Daarna pas auto-assign proberen (niet blocking)
     try {
       await fetch(`${process.env.APP_URL}/api/planning/auto-assign/${rows[0].id}`, { method: "POST" });
     } catch (e) {
       console.warn("Auto-assign call failed:", e.message);
     }
 
-    // 3️⃣ Antwoord teruggeven
     res.status(201).json(rows[0]);
   } catch (err) {
     console.error("Planning create error:", err);
@@ -91,17 +134,9 @@ router.post("/", async (req, res) => {
   }
 });
 
-
-/**
- * ✅ PUT /api/planning/:id
- * Update bestaand planningrecord (datum, member, status, comment, invoiced, cancel_reason)
- * + automatische contract-update bij Afgerond
- */
 router.put("/:id", async (req, res) => {
   try {
     const { memberId, date, status, comment, invoiced, cancel_reason } = req.body;
-
-    // 1️⃣ Huidig record + frequentie ophalen
     const { rows: currentRows } = await pool.query(
       `SELECT p.*, c.frequency, c.id AS contract_id
        FROM planning p
@@ -114,7 +149,6 @@ router.put("/:id", async (req, res) => {
 
     const current = currentRows[0];
 
-    // 2️⃣ Basisupdate
     const { rows } = await pool.query(
       `UPDATE planning
        SET member_id = COALESCE($1, member_id),
@@ -138,10 +172,8 @@ router.put("/:id", async (req, res) => {
 
     const updated = rows[0];
 
-    // 3️⃣ Nieuwe logica voor geannuleerd met reden
     if (status === "Geannuleerd") {
       if (["Contract stop gezet door klant", "Contract stop gezet door ons"].includes(cancel_reason)) {
-        // ❌ Reeks stoppen: alle toekomstige items voor dit contract op 'Geannuleerd' zetten
         await pool.query(
           `UPDATE planning
            SET status = 'Geannuleerd',
@@ -150,14 +182,11 @@ router.put("/:id", async (req, res) => {
           [cancel_reason, updated.contract_id, updated.date]
         );
         console.log(`🛑 Volledige reeks geannuleerd voor contract ${updated.contract_id}`);
-        // Geen automatische herplanning in dit pad
       } else {
-        // ✅ "Door Ons" / "Door Klant": laat huidige (front-end) herplanflow intact (optie F)
         console.log(`ℹ️ Geannuleerd met reden "${cancel_reason}" – herplanopties toegestaan`);
       }
     }
 
-    // 4️⃣ Extra logica bij statuswijziging
     if (status === "Afgerond") {
       const computeNextVisit = (lastVisit, freq) => {
         const base = new Date(lastVisit);
@@ -199,11 +228,6 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-
-/**
- * ✅ DELETE /api/planning/:id
- * Verwijdert een planningrecord
- */
 router.delete("/:id", async (req, res) => {
   try {
     const result = await pool.query("DELETE FROM planning WHERE id=$1 RETURNING id", [req.params.id]);
@@ -216,10 +240,6 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
-/**
- * ✅ POST /api/planning/generate
- * Automatische generatie op basis van actieve klanten + €400-regel
- */
 router.post("/generate", async (req, res) => {
   try {
     const { date } = req.body || {};
@@ -283,187 +303,14 @@ router.post("/generate", async (req, res) => {
     res.status(500).json({ error: "Failed to generate planning" });
   }
 });
-/**
- * ✅ Smart Planning Engine v2 – Auto-assign member op basis van ORS route-optimalisatie en €400-regel
- * POST /api/planning/auto-assign/:id
- */
-router.post("/auto-assign/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
 
-    // 1️⃣ Haal planningrecord + contract + adres op
-    const { rows: pRows } = await pool.query(`
-      SELECT p.id, p.contract_id, p.member_id, p.date,
-             c.price_inc, c.contact_id,
-             ct.address, ct.house_number, ct.city
-      FROM planning p
-      JOIN contracts c ON c.id = p.contract_id
-      JOIN contacts ct ON ct.id = c.contact_id
-      WHERE p.id = $1
-    `, [id]);
-
-    if (!pRows.length) return res.status(404).json({ error: "Planning item niet gevonden" });
-    const P = pRows[0];
-
-    // Als al toegewezen -> niets doen
-    if (P.member_id) return res.json({ ok: true, alreadyAssigned: true });
-
-    // 2️⃣ Alle actieve members ophalen
-    const { rows: members } = await pool.query(`SELECT id, name FROM members WHERE active = true ORDER BY created_at ASC`);
-    if (!members.length) return res.json({ ok: true, assigned: false, reason: "no_active_members" });
-
-    const dayISO = new Date(P.date).toISOString().slice(0, 10);
-    const scores = [];
-
-    // 3️⃣ Helper: geocode met ORS
-    async function geocode(addr, hn, city) {
-      const query = [addr, hn, city].filter(Boolean).join(" ");
-      const url = `https://api.openrouteservice.org/geocode/search?api_key=${process.env.ORS_API_KEY}&text=${encodeURIComponent(query)}&boundary.country=NL`;
-      const r = await fetch(url);
-      if (!r.ok) return null;
-      const j = await r.json();
-      const f = j?.features?.[0]?.geometry?.coordinates;
-      return Array.isArray(f) ? { lon: f[0], lat: f[1] } : null;
-    }
-
-    // 4️⃣ Helper: afstand berekenen (km)
-    async function getDistanceKM(a, b) {
-      const url = `https://api.openrouteservice.org/v2/directions/driving-car?api_key=${process.env.ORS_API_KEY}`;
-      const body = { coordinates: [[a.lon, a.lat], [b.lon, b.lat]] };
-      const r = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      });
-      if (!r.ok) return 9999;
-      const j = await r.json();
-      const m = j?.routes?.[0]?.summary?.distance || 0;
-      return m / 1000;
-    }
-
-    // 5️⃣ Geocode nieuwe locatie
-    const Pcoord = await geocode(P.address, P.house_number, P.city);
-    if (!Pcoord) return res.json({ ok: true, assigned: false, reason: "geocode_failed" });
-
-    // 6️⃣ Per member berekenen
-    for (const M of members) {
-      // Dagplanning van member ophalen
-      const { rows: jobs } = await pool.query(`
-        SELECT p.id, c.price_inc, ct.address, ct.house_number, ct.city
-        FROM planning p
-        JOIN contracts c ON c.id = p.contract_id
-        JOIN contacts ct ON ct.id = c.contact_id
-        WHERE p.member_id = $1
-          AND p.date::date = $2::date
-          AND p.status <> 'Geannuleerd'
-      `, [M.id, dayISO]);
-
-      const total = jobs.reduce((t, x) => t + (Number(x.price_inc) || 0), 0);
-      const projected = total + (Number(P.price_inc) || 0);
-      if (projected > 400) {
-        // Over budget → penalty
-        scores.push({ memberId: M.id, score: 9999 });
-        continue;
-      }
-
-      // Route-impact berekenen
-      let routePenalty = 0;
-      if (jobs.length > 0) {
-        let minDist = 9999;
-        for (const j of jobs) {
-          const c = await geocode(j.address, j.house_number, j.city);
-          if (c) {
-            const d = await getDistanceKM(c, Pcoord);
-            if (d < minDist) minDist = d;
-          }
-        }
-        routePenalty = minDist;
-      }
-
-      scores.push({ memberId: M.id, score: routePenalty });
-    }
-
-    // 7️⃣ Beste kandidaat selecteren
-    scores.sort((a, b) => a.score - b.score);
-    const best = scores[0];
-    if (!best || best.score >= 9999) {
-      return res.json({ ok: true, assigned: false, reason: "no_good_candidate" });
-    }
-
-    // 8️⃣ Member toewijzen
-    await pool.query(`UPDATE planning SET member_id = $1 WHERE id = $2`, [best.memberId, id]);
-    return res.json({ ok: true, assigned: true, memberId: best.memberId });
-  } catch (err) {
-    console.error("Auto-assign error:", err);
-    res.status(500).json({ error: "Auto-assign failed" });
-  }
-});
-
-/**
- * ✅ Herplan een bestaande afspraak automatisch volgens frequentie
- * POST /api/planning/replan/:id
- */
-router.post("/replan/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    // 1️⃣ Huidige planning + contract ophalen
-    const { rows } = await pool.query(`
-      SELECT p.id, p.contract_id, p.member_id, p.date, p.comment,
-             c.frequency, c.contact_id
-      FROM planning p
-      JOIN contracts c ON c.id = p.contract_id
-      WHERE p.id = $1
-    `, [id]);
-    if (!rows.length) return res.status(404).json({ error: "Planning niet gevonden" });
-
-    const current = rows[0];
-
-    // 2️⃣ Frequentie → nieuwe datum berekenen
-    const base = new Date(current.date);
-    const next = new Date(base);
-    switch (current.frequency) {
-      case "3 weken": next.setDate(base.getDate() + 21); break;
-      case "4 weken": next.setDate(base.getDate() + 28); break;
-      case "6 weken": next.setDate(base.getDate() + 42); break;
-      case "8 weken": next.setDate(base.getDate() + 56); break;
-      case "12 weken": next.setDate(base.getDate() + 84); break;
-      case "Maand": next.setMonth(base.getMonth() + 1); break;
-      case "3 keer per jaar": next.setMonth(base.getMonth() + 4); break;
-      case "1 keer per jaar": next.setFullYear(base.getFullYear() + 1); break;
-      default: next.setMonth(base.getMonth() + 1);
-    }
-    const nextDate = next.toISOString().split("T")[0];
-
-    // 3️⃣ Nieuwe planningrecord aanmaken (comment meenemen)
-    const { rows: ins } = await pool.query(
-      `INSERT INTO planning (id, contract_id, member_id, date, status, comment, created_at)
-       VALUES ($1,$2,$3,$4,'Gepland',$5,now())
-       RETURNING id`,
-      [uuidv4(), current.contract_id, current.member_id || null, nextDate, current.comment || null]
-    );
-
-    // 4️⃣ Slimme membertoewijzing (indien nodig)
-    try {
-      await fetch(`${process.env.APP_URL}/api/planning/auto-assign/${ins[0].id}`, { method: "POST" });
-    } catch (e) {
-      console.warn("Auto-assign bij replan mislukt:", e.message);
-    }
-
-    res.json({ ok: true, newId: ins[0].id, nextDate });
-  } catch (err) {
-    console.error("Replan error:", err);
-    res.status(500).json({ error: "Failed to replan" });
-  }
-});
-/** ✅ POST – planning updaten volgens frequentie */
+/** ✅ POST – planning updaten volgens frequentie (12 maanden vooruit, slim gepland) */
 router.post("/update-frequency", async (req, res) => {
   try {
     const { contractId, memberId, startDate } = req.body;
     if (!contractId || !startDate)
       return res.status(400).json({ error: "contractId en startDate verplicht" });
 
-    // frequentie van contract ophalen
     const contractRes = await pool.query(
       "SELECT frequency FROM contracts WHERE id=$1",
       [contractId]
@@ -474,30 +321,29 @@ router.post("/update-frequency", async (req, res) => {
     const { computeNextVisit } = await import("./contracts.js");
     const freq = contractRes.rows[0].frequency || "Maand";
 
-    // eerste datum = startDate
     let current = new Date(startDate);
-    const updated = [];
+    const end = new Date(current);
+    end.setMonth(end.getMonth() + 12); // minimaal 12 maanden vooruit
+    let updated = 0;
 
-    // maak 6 toekomstige afspraken (max 6 maanden/iteraties)
-    for (let i = 0; i < 6; i++) {
-      const id = uuidv4();
+    while (current <= end) {
+      const bestDate = await findBestWorkday(current, memberId, contractId);
       await pool.query(
         `INSERT INTO planning (id, contract_id, member_id, date, status, created_at)
          VALUES ($1,$2,$3,$4,'Gepland',now())
          ON CONFLICT (contract_id, date) DO UPDATE 
          SET member_id=EXCLUDED.member_id, status='Gepland'`,
-        [id, contractId, memberId, current.toISOString()]
+        [uuidv4(), contractId, memberId, bestDate.toISOString()]
       );
-      updated.push(current.toISOString());
+      updated++;
       current = new Date(computeNextVisit(current, freq));
     }
 
-    res.json({ updated: updated.length });
+    res.json({ updated });
   } catch (err) {
-    console.error("❌ Fout bij update-frequency:", err.message);
+    console.error("❌ Fout bij update-frequency:", err);
     res.status(500).json({ error: "Update frequentie mislukt" });
   }
 });
-
 
 export default router;
