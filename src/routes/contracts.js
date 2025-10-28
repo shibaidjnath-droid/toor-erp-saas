@@ -200,6 +200,86 @@ router.put("/:id", async (req, res) => {
 
     const contract = rows[0];
 
+    // ✅ Slimme initiële planning (minimaal 12 maanden vooruit)
+try {
+  const freq = contract.frequency || "Maand";
+  const { computeNextVisit } = await import("./contracts.js");
+
+  // 1️⃣ Startdatum bepalen
+  const now = new Date();
+  let start;
+  if (contract.next_visit && new Date(contract.next_visit) > now) {
+    // toekomstig: begin op de ingevulde startdatum
+    start = new Date(contract.next_visit);
+  } else if (contract.last_visit) {
+    // historisch: eerste afspraak = volgende na laatste bezoek
+    start = new Date(computeNextVisit(contract.last_visit, freq));
+  } else {
+    start = now;
+  }
+
+  // 2️⃣ Helpers (kleine kopie uit planning.js)
+  async function hasConflict(date, memberId, contractId) {
+    const { rows } = await pool.query(
+      `SELECT 1 FROM planning
+       WHERE date::date = $1::date
+         AND (member_id = $2 OR contract_id = $3)
+       LIMIT 1`,
+      [date.toISOString(), memberId, contractId]
+    );
+    return rows.length > 0;
+  }
+
+  async function findBestWorkday(date, memberId, contractId) {
+    const d = new Date(date);
+    const day = d.getDay(); // 0=zo, 6=za
+    if (day === 6 || day === 0) {
+      const friday = new Date(d);
+      friday.setDate(d.getDate() - (day === 6 ? 1 : 2));
+      const monday = new Date(d);
+      monday.setDate(d.getDate() + (day === 6 ? 2 : 1));
+      if (!(await hasConflict(friday, memberId, contractId))) return friday;
+      if (!(await hasConflict(monday, memberId, contractId))) return monday;
+      return monday;
+    }
+    if (!(await hasConflict(d, memberId, contractId))) return d;
+    for (let i = 1; i <= 3; i++) {
+      const test = new Date(d);
+      test.setDate(d.getDate() + i);
+      if (test.getDay() >= 1 && test.getDay() <= 5 && !(await hasConflict(test, memberId, contractId))) return test;
+    }
+    return d;
+  }
+
+  // 3️⃣ 12 maanden vooruit plannen
+  let current = new Date(start);
+  const end = new Date(current);
+  end.setMonth(end.getMonth() + 12);
+  let counter = 0;
+
+  while (current <= end) {
+    const bestDate = await findBestWorkday(current, null, contract.id);
+    const pid = uuidv4();
+    await pool.query(
+      `INSERT INTO planning (id, contract_id, date, status, created_at)
+       VALUES ($1,$2,$3,'Gepland',now())`,
+      [pid, contract.id, bestDate.toISOString()]
+    );
+    try {
+      await fetch(`${process.env.APP_URL}/api/planning/auto-assign/${pid}`, { method: "POST" });
+    } catch (e) {
+      console.warn("Auto-assign mislukt:", e.message);
+    }
+    counter++;
+    current = new Date(computeNextVisit(current, freq));
+  }
+
+  console.log(`🧩 Slimme planning: ${counter} afspraken aangemaakt voor contract ${contract.id}`);
+} catch (err) {
+  console.warn("❌ Slimme planning niet gelukt:", err.message);
+}
+
+
     // ✅ Automatisch planningrecord (alleen als next_visit <= vandaag)
     if (contract.next_visit) {
       try {
