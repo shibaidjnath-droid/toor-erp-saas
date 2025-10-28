@@ -29,6 +29,126 @@ export function computeNextVisit(lastVisit, frequency) {
   return d.toISOString();
 }
 
+/* ─────────────────────────────────────────────────────────────
+   Kleine helpers voor “slim plannen”
+   ───────────────────────────────────────────────────────────── */
+
+async function hasConflict(date, memberId, contractId) {
+  // Conflicten tellen als: zelfde dag én (zelfde member of zelfde contract), niet geannuleerd
+  const { rows } = await pool.query(
+    `SELECT 1 FROM planning
+     WHERE date::date = $1::date
+       AND (member_id = $2 OR contract_id = $3)
+       AND status <> 'Geannuleerd'
+     LIMIT 1`,
+    [date.toISOString(), memberId, contractId]
+  );
+  return rows.length > 0;
+}
+
+async function findBestWorkday(date, memberId, contractId) {
+  const d = new Date(date);
+  const day = d.getDay(); // 0=zo, 6=za
+
+  // Weekend → vrijdag proberen, anders maandag
+  if (day === 6 || day === 0) {
+    const friday = new Date(d);
+    friday.setDate(d.getDate() - (day === 6 ? 1 : 2));
+    const monday = new Date(d);
+    monday.setDate(d.getDate() + (day === 6 ? 2 : 1));
+
+    if (!(await hasConflict(friday, memberId, contractId))) return friday;
+    if (!(await hasConflict(monday, memberId, contractId))) return monday;
+    return monday; // fallback
+  }
+
+  // Werkdag → als conflict, schuif max 3 werkdagen op
+  if (!(await hasConflict(d, memberId, contractId))) return d;
+
+  for (let i = 1; i <= 3; i++) {
+    const test = new Date(d);
+    test.setDate(d.getDate() + i);
+    if (test.getDay() >= 1 && test.getDay() <= 5 && !(await hasConflict(test, memberId, contractId))) {
+      return test;
+    }
+  }
+  return d; // fallback
+}
+
+/** Serie opnieuw opbouwen voor één contract (12 maanden vooruit) */
+async function rebuildSeriesForContract(contract, opts = { logPrefix: "" }) {
+  const logP = opts.logPrefix || "";
+
+  // 1) Startdatum bepalen
+  const now = new Date();
+  const freq = contract.frequency || "Maand";
+  let start;
+
+  if (contract.last_visit) {
+    const lv = new Date(contract.last_visit);
+    if (lv > now) {
+      start = lv; // laatste bezoek in de toekomst → eerste = die datum
+    } else {
+      start = new Date(computeNextVisit(lv, freq)); // historisch → volgende
+    }
+  } else if (contract.next_visit) {
+    const nv = new Date(contract.next_visit);
+    start = nv > now ? nv : now;
+  } else {
+    start = now;
+  }
+
+  // 2) Toekomstige niet-afgeronde/niet-gefactureerde afspraken verwijderen (alleen dit contract)
+  await pool.query(
+    `DELETE FROM planning
+     WHERE contract_id = $1
+       AND date::date >= $2::date
+       AND (invoiced = false OR invoiced IS NULL)
+       AND status <> 'Afgerond'`,
+    [contract.id, start.toISOString()]
+  );
+
+  // 3) 12 maanden vooruit opnieuw plannen (met weekend/kleine conflictcorrectie)
+  let current = new Date(start);
+  const end = new Date(current);
+  end.setMonth(end.getMonth() + 12);
+
+  let counter = 0;
+  while (current <= end) {
+    const bestDate = await findBestWorkday(current, null, contract.id);
+
+    // Alleen toevoegen als die dag voor dit contract nog niet bestaat
+    const exists = await pool.query(
+      `SELECT id FROM planning WHERE contract_id=$1 AND date::date=$2::date LIMIT 1`,
+      [contract.id, bestDate.toISOString()]
+    );
+    if (!exists.rowCount) {
+      const pid = uuidv4();
+      await pool.query(
+        `INSERT INTO planning (id, contract_id, date, status, created_at)
+         VALUES ($1,$2,$3,'Gepland',now())`,
+        [pid, contract.id, bestDate.toISOString()]
+      );
+      // Auto-assign (non-blocking)
+      try {
+        await fetch(`${process.env.APP_URL}/api/planning/auto-assign/${pid}`, { method: "POST" });
+      } catch (e) {
+        console.warn(`${logP}Auto-assign faalde:`, e.message);
+      }
+      counter++;
+    }
+
+    current = new Date(computeNextVisit(current, freq));
+  }
+
+  console.log(`${logP}🔁 Reeks herbouwd: ${counter} afspraken voor contract ${contract.id}`);
+  return counter;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Endpoints
+   ───────────────────────────────────────────────────────────── */
+
 /** ✅ GET – alle contracts (inclusief klantadresgegevens) */
 router.get("/", async (_req, res) => {
   try {
@@ -59,7 +179,6 @@ router.get("/", async (_req, res) => {
   }
 });
 
-
 /** ✅ GET – één contract */
 router.get("/:id", async (req, res) => {
   try {
@@ -84,7 +203,7 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-/** ✅ POST – nieuw contract */
+/** ✅ POST – nieuw contract (maakt ook 12m reeks aan) */
 router.post("/", async (req, res) => {
   try {
     const {
@@ -124,8 +243,15 @@ router.post("/", async (req, res) => {
 
     const contract = rows[0];
 
-    // ✅ Automatisch planningrecord (alleen als next_visit <= vandaag)
-   if (contract.next_visit) {
+    // 🔁 Slimme initiële 12m reeks
+    try {
+      await rebuildSeriesForContract(contract, { logPrefix: "POST /contracts – " });
+    } catch (err) {
+      console.warn("❌ Slimme planning niet gelukt (POST):", err.message);
+    }
+
+    // (Compat) enkele eerste planning (alleen als nog niet bestaat)
+    if (contract.next_visit) {
       try {
         const existing = await pool.query(
           "SELECT id FROM planning WHERE contract_id=$1 AND date::date=$2::date",
@@ -137,7 +263,7 @@ router.post("/", async (req, res) => {
              VALUES ($1,$2,$3,'Gepland',now())`,
             [uuidv4(), contract.id, contract.next_visit]
           );
-          console.log(`✅ Planningrecord aangemaakt voor nieuw contract ${contract.id}`);
+          console.log(`✅ Enkel planningrecord aangemaakt (compat) voor contract ${contract.id}`);
         }
       } catch (err) {
         console.error("❌ Fout bij automatisch planningrecord (POST):", err.message);
@@ -154,7 +280,7 @@ router.post("/", async (req, res) => {
   }
 });
 
-/** ✅ PUT – update contract */
+/** ✅ PUT – update contract (+ veilige herbouw van toekomstige reeks) */
 router.put("/:id", async (req, res) => {
   try {
     const {
@@ -171,6 +297,7 @@ router.put("/:id", async (req, res) => {
         ? computeNextVisit(lastVisit, freq || "Maand")
         : undefined;
 
+    // 1) Update contract
     const { rows } = await pool.query(
       `UPDATE contracts
        SET frequency = COALESCE($1, frequency),
@@ -200,105 +327,11 @@ router.put("/:id", async (req, res) => {
 
     const contract = rows[0];
 
-    // ✅ Slimme initiële planning (minimaal 12 maanden vooruit)
-try {
-  const freq = contract.frequency || "Maand";
-  const { computeNextVisit } = await import("./contracts.js");
-
-  // 1️⃣ Startdatum bepalen
-  const now = new Date();
-  let start;
-  if (contract.next_visit && new Date(contract.next_visit) > now) {
-    // toekomstig: begin op de ingevulde startdatum
-    start = new Date(contract.next_visit);
-  } else if (contract.last_visit) {
-    // historisch: eerste afspraak = volgende na laatste bezoek
-    start = new Date(computeNextVisit(contract.last_visit, freq));
-  } else {
-    start = now;
-  }
-
-  // 2️⃣ Helpers (kleine kopie uit planning.js)
-  async function hasConflict(date, memberId, contractId) {
-    const { rows } = await pool.query(
-      `SELECT 1 FROM planning
-       WHERE date::date = $1::date
-         AND (member_id = $2 OR contract_id = $3)
-       LIMIT 1`,
-      [date.toISOString(), memberId, contractId]
-    );
-    return rows.length > 0;
-  }
-
-  async function findBestWorkday(date, memberId, contractId) {
-    const d = new Date(date);
-    const day = d.getDay(); // 0=zo, 6=za
-    if (day === 6 || day === 0) {
-      const friday = new Date(d);
-      friday.setDate(d.getDate() - (day === 6 ? 1 : 2));
-      const monday = new Date(d);
-      monday.setDate(d.getDate() + (day === 6 ? 2 : 1));
-      if (!(await hasConflict(friday, memberId, contractId))) return friday;
-      if (!(await hasConflict(monday, memberId, contractId))) return monday;
-      return monday;
-    }
-    if (!(await hasConflict(d, memberId, contractId))) return d;
-    for (let i = 1; i <= 3; i++) {
-      const test = new Date(d);
-      test.setDate(d.getDate() + i);
-      if (test.getDay() >= 1 && test.getDay() <= 5 && !(await hasConflict(test, memberId, contractId))) return test;
-    }
-    return d;
-  }
-
-  // 3️⃣ 12 maanden vooruit plannen
-  let current = new Date(start);
-  const end = new Date(current);
-  end.setMonth(end.getMonth() + 12);
-  let counter = 0;
-
-  while (current <= end) {
-    const bestDate = await findBestWorkday(current, null, contract.id);
-    const pid = uuidv4();
-    await pool.query(
-      `INSERT INTO planning (id, contract_id, date, status, created_at)
-       VALUES ($1,$2,$3,'Gepland',now())`,
-      [pid, contract.id, bestDate.toISOString()]
-    );
+    // 2) Reeks heropbouwen (12 maanden vooruit), veilig
     try {
-      await fetch(`${process.env.APP_URL}/api/planning/auto-assign/${pid}`, { method: "POST" });
-    } catch (e) {
-      console.warn("Auto-assign mislukt:", e.message);
-    }
-    counter++;
-    current = new Date(computeNextVisit(current, freq));
-  }
-
-  console.log(`🧩 Slimme planning: ${counter} afspraken aangemaakt voor contract ${contract.id}`);
-} catch (err) {
-  console.warn("❌ Slimme planning niet gelukt:", err.message);
-}
-
-
-    // ✅ Automatisch planningrecord (alleen als next_visit <= vandaag)
-    if (contract.next_visit) {
-      try {
-        const existing = await pool.query(
-          "SELECT id FROM planning WHERE contract_id=$1 AND date::date=$2::date",
-          [contract.id, contract.next_visit]
-        );
-        if (!existing.rowCount) {
-          await pool.query(
-            `INSERT INTO planning (id, contract_id, date, status, created_at)
-             VALUES ($1,$2,$3,'Gepland',now())`,
-            [uuidv4(), contract.id, contract.next_visit]
-          );
-          console.log(`✅ Planningrecord aangemaakt bij update voor contract ${contract.id}`);
-          console.log(`📢 Debug: automatisch planningrecord aangemaakt (${contract.id})`);
-        }
-      } catch (err) {
-        console.error("❌ Fout bij automatisch planningrecord (PUT):", err.message);
-      }
+      await rebuildSeriesForContract(contract, { logPrefix: "PUT /contracts – " });
+    } catch (err) {
+      console.warn("❌ Slimme planning niet gelukt (PUT):", err.message);
     }
 
     if (typeof contract.type_service === "string")
