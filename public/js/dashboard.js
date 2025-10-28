@@ -253,7 +253,7 @@ async function renderClients() {
         showToast(`Klant ${klant.name} aangemaakt`, "success");
 
         // Klant toevoegen aan lokale lijst
-        clients.push(klant);
+        await renderClients();
 
         // 🔹 Indien contractvelden ingevuld zijn → contractlijst vernieuwen
         if (vals.contract_typeService || vals.contract_description) {
@@ -839,6 +839,15 @@ if (weekNumber) url.searchParams.set("week", weekNumber);
   document.getElementById("memberFilter").onchange = loadPlanningData;
   document.getElementById("customDate").onchange = loadPlanningData;
   document.getElementById("statusFilter").onchange = loadPlanningData;
+
+    // 👇 Toevoegen zodat Enter of wijziging van weeknummer filter werkt
+  const weekInput = document.getElementById("filterWeek");
+  if (weekInput) {
+    weekInput.addEventListener("keydown", e => {
+      if (e.key === "Enter") loadPlanningData(); // Enter = herladen
+    });
+    weekInput.addEventListener("change", loadPlanningData); // wijziging = herladen
+  }
 
   // ✅ Veiligheid: functies checken
   const genBtn = document.getElementById("generatePlanningBtn");
