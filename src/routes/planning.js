@@ -304,7 +304,7 @@ router.post("/generate", async (req, res) => {
   }
 });
 
-/** ✅ POST – planning updaten volgens frequentie (12 maanden vooruit, slim gepland) */
+/** ✅ POST – planning updaten volgens frequentie (volledige reeks herplannen 12 maanden vooruit) */
 router.post("/update-frequency", async (req, res) => {
   try {
     const { contractId, memberId, startDate } = req.body;
@@ -321,29 +321,87 @@ router.post("/update-frequency", async (req, res) => {
     const { computeNextVisit } = await import("./contracts.js");
     const freq = contractRes.rows[0].frequency || "Maand";
 
+    // 1️⃣ Oude reeks verwijderen vanaf startDate
+    await pool.query(
+      `DELETE FROM planning
+       WHERE contract_id=$1
+         AND date >= $2`,
+      [contractId, new Date(startDate).toISOString()]
+    );
+
+    // 2️⃣ Nieuwe reeks 12 maanden vooruit plannen
     let current = new Date(startDate);
     const end = new Date(current);
-    end.setMonth(end.getMonth() + 12); // minimaal 12 maanden vooruit
-    let updated = 0;
+    end.setMonth(end.getMonth() + 12);
+    let count = 0;
 
     while (current <= end) {
       const bestDate = await findBestWorkday(current, memberId, contractId);
-      await pool.query(
+      const { rows: ins } = await pool.query(
         `INSERT INTO planning (id, contract_id, member_id, date, status, created_at)
          VALUES ($1,$2,$3,$4,'Gepland',now())
-         ON CONFLICT (contract_id, date) DO UPDATE 
-         SET member_id=EXCLUDED.member_id, status='Gepland'`,
-        [uuidv4(), contractId, memberId, bestDate.toISOString()]
+         RETURNING id`,
+        [uuidv4(), contractId, memberId || null, bestDate.toISOString()]
       );
-      updated++;
+
+      // auto-assign direct proberen
+      try {
+        await fetch(`${process.env.APP_URL}/api/planning/auto-assign/${ins[0].id}`, { method: "POST" });
+      } catch (e) {
+        console.warn("Auto-assign bij update-frequency mislukt:", e.message);
+      }
+
+      count++;
       current = new Date(computeNextVisit(current, freq));
     }
 
-    res.json({ updated });
+    res.json({ updated: count });
   } catch (err) {
     console.error("❌ Fout bij update-frequency:", err);
-    res.status(500).json({ error: "Update frequentie mislukt" });
+    res.status(500).json({ error: err.message || "Update frequentie mislukt" });
   }
 });
+
+/** ✅ POST – replan slimme variant */
+router.post("/replan/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { rows } = await pool.query(`
+      SELECT p.id, p.contract_id, p.member_id, p.date, p.comment,
+             c.frequency, c.contact_id
+      FROM planning p
+      JOIN contracts c ON c.id = p.contract_id
+      WHERE p.id = $1
+    `, [id]);
+    if (!rows.length)
+      return res.status(404).json({ error: "Planning niet gevonden" });
+
+    const current = rows[0];
+    const { computeNextVisit } = await import("./contracts.js");
+
+    const next = new Date(computeNextVisit(current.date, current.frequency));
+    const bestDate = await findBestWorkday(next, current.member_id, current.contract_id);
+
+    const { rows: ins } = await pool.query(
+      `INSERT INTO planning (id, contract_id, member_id, date, status, comment, created_at)
+       VALUES ($1,$2,$3,$4,'Gepland',$5,now())
+       RETURNING id`,
+      [uuidv4(), current.contract_id, current.member_id || null, bestDate.toISOString(), current.comment || null]
+    );
+
+    try {
+      await fetch(`${process.env.APP_URL}/api/planning/auto-assign/${ins[0].id}`, { method: "POST" });
+    } catch (e) {
+      console.warn("Auto-assign bij replan mislukt:", e.message);
+    }
+
+    res.json({ ok: true, newId: ins[0].id, nextDate: bestDate.toISOString() });
+  } catch (err) {
+    console.error("❌ Replan error:", err);
+    res.status(500).json({ error: err.message || "Failed to replan" });
+  }
+});
+
 
 export default router;
