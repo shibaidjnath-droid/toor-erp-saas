@@ -802,6 +802,10 @@ async function loadPlanningData() {
   if (filter === "date" && dateInput.value)
     url.searchParams.set("start", dateInput.value);
 
+  // 👇 nieuwe toevoeging
+const weekNumber = document.getElementById("filterWeek")?.value;
+if (weekNumber) url.searchParams.set("week", weekNumber);
+
   const res = await fetch(url);
   if (!res.ok) {
     showToast("Fout bij laden planning", "error");
