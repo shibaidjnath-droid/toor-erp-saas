@@ -36,23 +36,32 @@ function startOfNextYear(d) {
   return new Date(d.getFullYear() + 1, 0, 1, 0, 0, 0, 0);
 }
 
+/* ===========================================================
+   📅 ISO-weeknummer (maandag = dag 1)
+   =========================================================== */
+function getIsoWeekNumber(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7; // ma=1..zo=7
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+}
+
 /**
  * Map front-end waarde → [from, to] (ISO strings)
- * Ondersteunt NL labels: "Vandaag", "Deze week", "Deze maand", "Dit jaar", "Specifieke datum", "Alles"
- * en EN labels: "today", "week", "month", "year", "date", "all"
+ * NL labels: "Vandaag", "Deze week", "Deze maand", "Dit jaar", "Specifieke datum", "Alles"
+ * EN labels: "today", "week", "month", "year", "date", "all"
  */
 function resolveRange(rangeLabel, startParam) {
   const now = new Date();
   const label = String(rangeLabel || "").toLowerCase();
 
-  // parse optionele start (voor "specifieke datum")
   let customStart = null;
   if (startParam) {
     const t = new Date(startParam);
     if (!isNaN(t.valueOf())) customStart = t;
   }
 
-  // NL/EN normalisatie
   const isToday = ["vandaag", "today"].includes(label);
   const isWeek = ["deze week", "week"].includes(label);
   const isMonth = ["deze maand", "month"].includes(label);
@@ -115,23 +124,25 @@ export function computeNextVisit(lastVisit, frequency) {
    =========================================================== */
 
 /**
- * ✅ GET /api/planning/schedule?range=…&memberId=&status=&start=YYYY-MM-DD
- * range ondersteunt NL/EN labels (zie boven)
+ * ✅ GET /api/planning/schedule?range=…&memberId=&status=&start=YYYY-MM-DD&week=NN
+ * - range ondersteunt NL/EN labels
+ * - extra optionele filter: week=NN (ISO weeknummer)
  */
 router.get("/schedule", async (req, res) => {
   try {
-    const { range = "Deze week", memberId, status, start } = req.query;
+    const { range = "Deze week", memberId, status, start, week } = req.query;
     const [fromIso, toIso] = resolveRange(range, start);
 
     const params = [fromIso, toIso];
     let filter = "";
     if (memberId) { params.push(memberId); filter += ` AND p.member_id = $${params.length}`; }
     if (status)   { params.push(status);   filter += ` AND p.status = $${params.length}`; }
+    if (week)     { params.push(parseInt(week, 10)); filter += ` AND p.week_number = $${params.length}`; }
 
     const { rows } = await pool.query(
       `SELECT 
-         p.id, p.contract_id, p.member_id, p.date, p.status, p.comment,
-         p.cancel_reason, p.invoiced,
+         p.id, p.contract_id, p.member_id, p.date, p.week_number,
+         p.status, p.comment, p.cancel_reason, p.invoiced,
          c.contact_id AS client_id, ct.name AS customer,
          ct.address, ct.house_number, ct.city,
          m.name AS member_name
@@ -176,6 +187,7 @@ router.get("/:id", async (req, res) => {
 /**
  * ✅ POST /api/planning
  * { contractId, memberId, date, status, comment, invoiced }
+ * → berekent automatisch week_number (ISO)
  */
 router.post("/", async (req, res) => {
   try {
@@ -183,11 +195,14 @@ router.post("/", async (req, res) => {
     if (!contractId || !date)
       return res.status(400).json({ error: "contractId en date zijn verplicht" });
 
+    const dt = new Date(date);
+    const weekNumber = getIsoWeekNumber(dt);
+
     const { rows } = await pool.query(
-      `INSERT INTO planning (id, contract_id, member_id, date, status, comment, invoiced, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7, now())
+      `INSERT INTO planning (id, contract_id, member_id, date, week_number, status, comment, invoiced, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8, now())
        RETURNING *`,
-      [uuidv4(), contractId, memberId || null, new Date(date).toISOString(), status, comment, !!invoiced]
+      [uuidv4(), contractId, memberId || null, dt.toISOString(), weekNumber, status, comment, !!invoiced]
     );
 
     // Niet-blokkerend: auto-assign proberen
@@ -206,13 +221,14 @@ router.post("/", async (req, res) => {
 
 /**
  * ✅ PUT /api/planning/:id
- * Update + contractlogica bij Afgerond + annuleer-reeks bij specifieke redenen
+ * - bij wijziging 'date' → week_number herberekenen
+ * - contractlogica bij Afgerond en annuleer-reeks bij specifieke redenen
  */
 router.put("/:id", async (req, res) => {
   try {
     const { memberId, date, status, comment, invoiced, cancel_reason } = req.body;
 
-    // 1) Huidig record incl. contract-frequentie
+    // 1) Huidig record + contract-frequentie
     const { rows: currentRows } = await pool.query(
       `SELECT p.*, c.frequency, c.id AS contract_id
        FROM planning p
@@ -223,20 +239,25 @@ router.put("/:id", async (req, res) => {
     if (!currentRows.length) return res.status(404).json({ error: "Planning item niet gevonden" });
     const current = currentRows[0];
 
+    // Weeknummer herberekenen indien datum meegegeven
+    const newWeek = date ? getIsoWeekNumber(new Date(date)) : null;
+
     // 2) Update planning-record
     const { rows } = await pool.query(
       `UPDATE planning
          SET member_id     = COALESCE($1, member_id),
              date          = COALESCE($2, date),
-             status        = COALESCE($3, status),
-             comment       = COALESCE($4, comment),
-             invoiced      = COALESCE($5, invoiced),
-             cancel_reason = COALESCE($6, cancel_reason)
-       WHERE id = $7
+             week_number   = COALESCE($3, week_number),
+             status        = COALESCE($4, status),
+             comment       = COALESCE($5, comment),
+             invoiced      = COALESCE($6, invoiced),
+             cancel_reason = COALESCE($7, cancel_reason)
+       WHERE id = $8
        RETURNING *`,
       [
         memberId || null,
         date ? new Date(date).toISOString() : null,
+        newWeek,
         status || null,
         comment || null,
         typeof invoiced === "boolean" ? invoiced : null,
@@ -296,13 +317,9 @@ router.delete("/:id", async (req, res) => {
 
 /**
  * ✅ (Optioneel) Auto-assign endpoint — non-blocking helper
- * POST /api/planning/auto-assign/:id
- * Hier kun je eigen logic toevoegen; nu een veilige no-op met OK.
  */
 router.post("/auto-assign/:id", async (req, res) => {
   try {
-    // Placeholder: hier kun je slimme logic doen (beschikbare member vinden, etc.)
-    // Laat het stilletjes slagen zodat frontend nooit breekt.
     res.json({ ok: true, planningId: req.params.id });
   } catch (err) {
     console.warn("Auto-assign error:", err.message);

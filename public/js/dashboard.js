@@ -815,6 +815,7 @@ async function loadPlanningData() {
     `${p.address || ""} ${p.house_number || ""}, ${p.city || ""}`,
     p.customer || "-",
     p.date ? p.date.split("T")[0] : "-",
+    p.week_number || "-",
     p.member_name || "-",
     p.comment || "-",
     p.status || "Gepland",
@@ -822,7 +823,7 @@ async function loadPlanningData() {
   ]);
 
   tbl.innerHTML = tableHTML(
-    ["Adres", "Klant", "Datum", "Member", "Opmerking", "Status", "Reden Geannuleerd"],
+    ["Adres", "Klant", "Datum", "Week", "Member", "Opmerking", "Status", "Reden Geannuleerd"],
     rows
   );
 
@@ -1004,6 +1005,7 @@ async function renderPlanning() {
         <option value="date">Specifieke datum…</option>
         <option value="all" selected>Alles</option>
       </select>
+       <input id="filterWeek" type="number" min="1" max="53" placeholder="Week #" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700" />
 
       <input id="customDate" type="date"
              class="hidden border rounded px-2 py-1 bg-white text-gray-800
