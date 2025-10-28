@@ -5,69 +5,128 @@ import { v4 as uuidv4 } from "uuid";
 
 const router = express.Router();
 
-/* ─────────────────────────────────────────────────────────────
-   🧠 Slimme helpers
-   ───────────────────────────────────────────────────────────── */
-
-async function hasConflict(date, memberId, contractId) {
-  const { rows } = await pool.query(
-    `SELECT 1 FROM planning
-     WHERE date::date = $1::date
-       AND (member_id = $2 OR contract_id = $3)
-       AND status <> 'Geannuleerd'
-     LIMIT 1`,
-    [date.toISOString(), memberId, contractId]
-  );
-  return rows.length > 0;
+/* ===========================================================
+   🧭 Kalender-hulpfuncties (NL & EN labels ondersteund)
+   =========================================================== */
+function startOfDay(d) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+function addDays(d, n) {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+function startOfWeekMonday(d) {
+  const x = startOfDay(d);
+  const day = x.getDay() || 7; // ma=1, zo=7
+  return addDays(x, -(day - 1));
+}
+function startOfMonth(d) {
+  return new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
+}
+function startOfNextMonth(d) {
+  return new Date(d.getFullYear(), d.getMonth() + 1, 1, 0, 0, 0, 0);
+}
+function startOfYear(d) {
+  return new Date(d.getFullYear(), 0, 1, 0, 0, 0, 0);
+}
+function startOfNextYear(d) {
+  return new Date(d.getFullYear() + 1, 0, 1, 0, 0, 0, 0);
 }
 
-async function findBestWorkday(date, memberId, contractId) {
-  const d = new Date(date);
-  const day = d.getDay(); // 0=zo, 6=za
+/**
+ * Map front-end waarde → [from, to] (ISO strings)
+ * Ondersteunt NL labels: "Vandaag", "Deze week", "Deze maand", "Dit jaar", "Specifieke datum", "Alles"
+ * en EN labels: "today", "week", "month", "year", "date", "all"
+ */
+function resolveRange(rangeLabel, startParam) {
+  const now = new Date();
+  const label = String(rangeLabel || "").toLowerCase();
 
-  if (day === 6 || day === 0) {
-    const friday = new Date(d);
-    friday.setDate(d.getDate() - (day === 6 ? 1 : 2));
-    const monday = new Date(d);
-    monday.setDate(d.getDate() + (day === 6 ? 2 : 1));
-    if (!(await hasConflict(friday, memberId, contractId))) return friday;
-    if (!(await hasConflict(monday, memberId, contractId))) return monday;
-    return monday;
+  // parse optionele start (voor "specifieke datum")
+  let customStart = null;
+  if (startParam) {
+    const t = new Date(startParam);
+    if (!isNaN(t.valueOf())) customStart = t;
   }
 
-  if (!(await hasConflict(d, memberId, contractId))) return d;
-  for (let i = 1; i <= 3; i++) {
-    const test = new Date(d);
-    test.setDate(d.getDate() + i);
-    if (test.getDay() >= 1 && test.getDay() <= 5 && !(await hasConflict(test, memberId, contractId))) return test;
+  // NL/EN normalisatie
+  const isToday = ["vandaag", "today"].includes(label);
+  const isWeek = ["deze week", "week"].includes(label);
+  const isMonth = ["deze maand", "month"].includes(label);
+  const isYear = ["dit jaar", "year"].includes(label);
+  const isDate = ["specifieke datum", "date"].includes(label);
+  const isAll = ["alles", "all"].includes(label);
+
+  let from, to;
+
+  if (isToday) {
+    from = startOfDay(now);
+    to = addDays(from, 1);
+  } else if (isWeek) {
+    from = startOfWeekMonday(now);
+    to = addDays(from, 7);
+  } else if (isMonth) {
+    from = startOfMonth(now);
+    to = startOfNextMonth(now);
+  } else if (isYear) {
+    from = startOfYear(now);
+    to = startOfNextYear(now);
+  } else if (isDate) {
+    const base = customStart ? startOfDay(customStart) : startOfDay(now);
+    from = base;
+    to = addDays(base, 1);
+  } else if (isAll) {
+    from = new Date(now.getFullYear() - 5, 0, 1);
+    to = new Date(now.getFullYear() + 10, 0, 1);
+  } else {
+    // fallback → week (ma–zo)
+    from = startOfWeekMonday(now);
+    to = addDays(from, 7);
   }
-  return d;
+
+  return [from.toISOString(), to.toISOString()];
 }
 
-/* ─────────────────────────────────────────────────────────────
-   🗓️ Endpoints
-   ───────────────────────────────────────────────────────────── */
+/* ===========================================================
+   🔁 Compute next visit (zelfde keuzes als contract.js)
+   =========================================================== */
+export function computeNextVisit(lastVisit, frequency) {
+  const base = lastVisit ? new Date(lastVisit) : new Date();
+  const d = new Date(base);
+  switch (frequency) {
+    case "3 weken": d.setDate(d.getDate() + 21); break;
+    case "4 weken": d.setDate(d.getDate() + 28); break;
+    case "6 weken": d.setDate(d.getDate() + 42); break;
+    case "8 weken": d.setDate(d.getDate() + 56); break;
+    case "12 weken": d.setDate(d.getDate() + 84); break;
+    case "Maand": d.setMonth(d.getMonth() + 1); break;
+    case "3 keer per jaar": d.setMonth(d.getMonth() + 4); break;
+    case "1 keer per jaar": d.setFullYear(d.getFullYear() + 1); break;
+    default: d.setMonth(d.getMonth() + 1);
+  }
+  return d.toISOString();
+}
 
-/** ✅ GET /api/planning/schedule */
+/* ===========================================================
+   🗓️  Endpoints
+   =========================================================== */
+
+/**
+ * ✅ GET /api/planning/schedule?range=…&memberId=&status=&start=YYYY-MM-DD
+ * range ondersteunt NL/EN labels (zie boven)
+ */
 router.get("/schedule", async (req, res) => {
   try {
-    const { range = "week", memberId, status, start } = req.query;
-    const startDate = start ? new Date(start) : new Date();
-    const from = new Date(startDate);
-    const to = new Date(startDate);
+    const { range = "Deze week", memberId, status, start } = req.query;
+    const [fromIso, toIso] = resolveRange(range, start);
 
-    switch (range) {
-      case "today": to.setDate(from.getDate() + 1); break;
-      case "month": to.setMonth(from.getMonth() + 1); break;
-      case "year": to.setFullYear(from.getFullYear() + 1); break;
-      case "all": to.setFullYear(from.getFullYear() + 10); break;
-      default: to.setDate(from.getDate() + 7);
-    }
-
-    const params = [from.toISOString(), to.toISOString()];
+    const params = [fromIso, toIso];
     let filter = "";
     if (memberId) { params.push(memberId); filter += ` AND p.member_id = $${params.length}`; }
-    if (status) { params.push(status); filter += ` AND p.status = $${params.length}`; }
+    if (status)   { params.push(status);   filter += ` AND p.status = $${params.length}`; }
 
     const { rows } = await pool.query(
       `SELECT 
@@ -78,22 +137,46 @@ router.get("/schedule", async (req, res) => {
          m.name AS member_name
        FROM planning p
        JOIN contracts c ON p.contract_id = c.id
-       JOIN contacts ct ON c.contact_id = ct.id
+       JOIN contacts  ct ON c.contact_id = ct.id
        LEFT JOIN members m ON p.member_id = m.id
-       WHERE p.date BETWEEN $1 AND $2
+       WHERE p.date >= $1 AND p.date < $2
        ${filter}
        ORDER BY p.date ASC, customer ASC`,
       params
     );
 
-    res.json({ items: rows });
+    res.json({ items: rows, range: { from: fromIso, to: toIso } });
   } catch (err) {
     console.error("Planning schedule fetch error:", err);
     res.status(500).json({ error: "Database error while fetching schedule" });
   }
 });
 
-/** ✅ POST /api/planning – handmatig nieuw item */
+/**
+ * ✅ GET /api/planning/:id
+ */
+router.get("/:id", async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT p.*, c.frequency, ct.name AS customer
+         FROM planning p
+         JOIN contracts c ON p.contract_id = c.id
+         JOIN contacts ct ON c.contact_id = ct.id
+       WHERE p.id = $1`,
+      [req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: "Planning item niet gevonden" });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error("Planning get error:", err);
+    res.status(500).json({ error: "Database error while fetching planning item" });
+  }
+});
+
+/**
+ * ✅ POST /api/planning
+ * { contractId, memberId, date, status, comment, invoiced }
+ */
 router.post("/", async (req, res) => {
   try {
     const { contractId, memberId, date, status = "Gepland", comment = null, invoiced = false } = req.body;
@@ -107,6 +190,7 @@ router.post("/", async (req, res) => {
       [uuidv4(), contractId, memberId || null, new Date(date).toISOString(), status, comment, !!invoiced]
     );
 
+    // Niet-blokkerend: auto-assign proberen
     try {
       await fetch(`${process.env.APP_URL}/api/planning/auto-assign/${rows[0].id}`, { method: "POST" });
     } catch (e) {
@@ -120,11 +204,15 @@ router.post("/", async (req, res) => {
   }
 });
 
-/** ✅ PUT /api/planning/:id – update bestaand item */
+/**
+ * ✅ PUT /api/planning/:id
+ * Update + contractlogica bij Afgerond + annuleer-reeks bij specifieke redenen
+ */
 router.put("/:id", async (req, res) => {
   try {
     const { memberId, date, status, comment, invoiced, cancel_reason } = req.body;
 
+    // 1) Huidig record incl. contract-frequentie
     const { rows: currentRows } = await pool.query(
       `SELECT p.*, c.frequency, c.id AS contract_id
        FROM planning p
@@ -132,19 +220,18 @@ router.put("/:id", async (req, res) => {
        WHERE p.id = $1`,
       [req.params.id]
     );
-    if (!currentRows.length)
-      return res.status(404).json({ error: "Planning item niet gevonden" });
-
+    if (!currentRows.length) return res.status(404).json({ error: "Planning item niet gevonden" });
     const current = currentRows[0];
 
+    // 2) Update planning-record
     const { rows } = await pool.query(
       `UPDATE planning
-       SET member_id = COALESCE($1, member_id),
-           date = COALESCE($2, date),
-           status = COALESCE($3, status),
-           comment = COALESCE($4, comment),
-           invoiced = COALESCE($5, invoiced),
-           cancel_reason = COALESCE($6, cancel_reason)
+         SET member_id     = COALESCE($1, member_id),
+             date          = COALESCE($2, date),
+             status        = COALESCE($3, status),
+             comment       = COALESCE($4, comment),
+             invoiced      = COALESCE($5, invoiced),
+             cancel_reason = COALESCE($6, cancel_reason)
        WHERE id = $7
        RETURNING *`,
       [
@@ -154,38 +241,36 @@ router.put("/:id", async (req, res) => {
         comment || null,
         typeof invoiced === "boolean" ? invoiced : null,
         cancel_reason || null,
-        req.params.id
+        req.params.id,
       ]
     );
-
     const updated = rows[0];
 
-    // Reeks annuleren bij stopzetting
+    // 3) Reeks annuleren indien reden volledige stop aangeeft
     if (status === "Geannuleerd") {
       if (["Contract stop gezet door klant", "Contract stop gezet door ons"].includes(cancel_reason)) {
         await pool.query(
           `UPDATE planning
-           SET status = 'Geannuleerd',
-               cancel_reason = COALESCE(cancel_reason, $1)
+             SET status = 'Geannuleerd',
+                 cancel_reason = COALESCE(cancel_reason, $1)
            WHERE contract_id = $2 AND date >= $3`,
           [cancel_reason, updated.contract_id, updated.date]
         );
         console.log(`🛑 Volledige reeks geannuleerd voor contract ${updated.contract_id}`);
       } else {
-        console.log(`ℹ️ Geannuleerd met reden "${cancel_reason}" – herplanopties toegestaan`);
+        console.log(`ℹ️ Geannuleerd met reden "${cancel_reason}" – herplan via frontend toegestaan`);
       }
     }
 
-    // Contract updaten bij afronding
+    // 4) Contract bijwerken na Afgerond
     if (status === "Afgerond") {
-      const { computeNextVisit } = await import("./contracts.js");
-      const next = computeNextVisit(updated.date, current.frequency);
+      const lastVisit = new Date(updated.date).toISOString();
+      const next = computeNextVisit(lastVisit, current.frequency);
       await pool.query(
-        `UPDATE contracts
-         SET last_visit = $1, next_visit = $2
-         WHERE id = $3`,
-        [updated.date, next, current.contract_id]
+        `UPDATE contracts SET last_visit = $1, next_visit = $2 WHERE id = $3`,
+        [lastVisit, next, current.contract_id]
       );
+      console.log(`✅ Contract ${current.contract_id} bijgewerkt na Afgerond`);
     }
 
     res.json(updated);
@@ -195,12 +280,13 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-/** ✅ DELETE /api/planning/:id */
+/**
+ * ✅ DELETE /api/planning/:id
+ */
 router.delete("/:id", async (req, res) => {
   try {
-    const result = await pool.query("DELETE FROM planning WHERE id=$1 RETURNING id", [req.params.id]);
-    if (!result.rowCount)
-      return res.status(404).json({ error: "Planning item niet gevonden" });
+    const result = await pool.query(`DELETE FROM planning WHERE id=$1 RETURNING id`, [req.params.id]);
+    if (!result.rowCount) return res.status(404).json({ error: "Planning item niet gevonden" });
     res.json({ ok: true });
   } catch (err) {
     console.error("Planning delete error:", err);
@@ -208,171 +294,19 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
-/** ✅ POST /api/planning/generate – €400-regel & balans */
-router.post("/generate", async (req, res) => {
+/**
+ * ✅ (Optioneel) Auto-assign endpoint — non-blocking helper
+ * POST /api/planning/auto-assign/:id
+ * Hier kun je eigen logic toevoegen; nu een veilige no-op met OK.
+ */
+router.post("/auto-assign/:id", async (req, res) => {
   try {
-    const { date } = req.body || {};
-    const planDate = date ? new Date(date) : new Date();
-    planDate.setHours(9, 0, 0, 0);
-
-    const { rows: members } = await pool.query(`SELECT * FROM members WHERE active = true ORDER BY created_at ASC`);
-    if (!members.length)
-      return res.status(400).json({ error: "Geen actieve members gevonden" });
-
-    const { rows: contracts } = await pool.query(`
-      SELECT c.*, ct.name AS customer, ct.address, ct.house_number, ct.city
-      FROM contracts c
-      JOIN contacts ct ON c.contact_id = ct.id
-      WHERE c.active = true AND ct.status = 'Active' AND c.next_visit <= $1
-    `, [planDate.toISOString()]);
-
-    const { rows: existing } = await pool.query(
-      `SELECT contract_id FROM planning WHERE date::date = $1::date`,
-      [planDate.toISOString()]
-    );
-    const alreadySet = new Set(existing.map(r => r.contract_id));
-    const todo = contracts.filter(c => !alreadySet.has(c.id));
-
-    const buckets = members.map(m => ({ member: m, total: 0, items: [] }));
-    for (const c of todo) {
-      const price = Number(c.price_inc || 0);
-      let slot = buckets.find(b => b.total + price <= 400);
-      if (!slot) slot = buckets.reduce((min, x) => (x.total < min.total ? x : min), buckets[0]);
-      slot.items.push(c);
-      slot.total += price;
-    }
-
-    const inserts = [];
-    for (const b of buckets) {
-      for (const c of b.items) {
-        inserts.push(pool.query(
-          `INSERT INTO planning (id, contract_id, member_id, date, status, created_at)
-           VALUES ($1,$2,$3,$4,'Gepland',now())`,
-          [uuidv4(), c.id, b.member.id, planDate.toISOString()]
-        ));
-      }
-    }
-    const result = await Promise.all(inserts);
-
-    res.json({
-      ok: true,
-      generated: result.length,
-      members: buckets.map(b => ({
-        member: b.member.name,
-        totaal: b.total,
-        aantal: b.items.length
-      }))
-    });
+    // Placeholder: hier kun je slimme logic doen (beschikbare member vinden, etc.)
+    // Laat het stilletjes slagen zodat frontend nooit breekt.
+    res.json({ ok: true, planningId: req.params.id });
   } catch (err) {
-    console.error("Planning generate error:", err);
-    res.status(500).json({ error: "Failed to generate planning" });
-  }
-});
-
-/** ✅ POST /api/planning/replan/:id – herplan volgens frequentie */
-router.post("/replan/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const { rows } = await pool.query(`
-      SELECT p.id, p.contract_id, p.member_id, p.date, p.comment,
-             c.frequency, c.contact_id
-      FROM planning p
-      JOIN contracts c ON c.id = p.contract_id
-      WHERE p.id = $1
-    `, [id]);
-    if (!rows.length) return res.status(404).json({ error: "Planning niet gevonden" });
-
-    const current = rows[0];
-    const { computeNextVisit } = await import("./contracts.js");
-
-    const nextDate = computeNextVisit(current.date, current.frequency);
-    const bestDate = await findBestWorkday(nextDate, current.member_id, current.contract_id);
-
-    const { rows: ins } = await pool.query(
-      `INSERT INTO planning (id, contract_id, member_id, date, status, comment, created_at)
-       VALUES ($1,$2,$3,$4,'Gepland',$5,now())
-       RETURNING id`,
-      [uuidv4(), current.contract_id, current.member_id || null, bestDate.toISOString(), current.comment || null]
-    );
-
-    try {
-      await fetch(`${process.env.APP_URL}/api/planning/auto-assign/${ins[0].id}`, { method: "POST" });
-    } catch {}
-
-    res.json({ ok: true, newId: ins[0].id, nextDate: bestDate });
-  } catch (err) {
-    console.error("Replan error:", err);
-    res.status(500).json({ error: "Failed to replan" });
-  }
-});
-
-/** ✅ POST /api/planning/update-frequency – reeks heropbouwen */
-router.post("/update-frequency", async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const { contractId, memberId, startDate, sourcePlanningId } = req.body;
-    if (!contractId || !startDate)
-      return res.status(400).json({ error: "contractId en startDate verplicht" });
-
-    const { rows: cRows } = await pool.query(
-      "SELECT id, frequency FROM contracts WHERE id=$1",
-      [contractId]
-    );
-    if (!cRows.length) return res.status(404).json({ error: "Contract niet gevonden" });
-    const freq = cRows[0].frequency || "Maand";
-
-    // commentbron
-    let seedComment = null;
-    if (sourcePlanningId) {
-      const { rows: s } = await pool.query("SELECT comment FROM planning WHERE id=$1", [sourcePlanningId]);
-      seedComment = s[0]?.comment || null;
-    }
-
-    await client.query("BEGIN");
-
-    await client.query(
-      `DELETE FROM planning
-       WHERE contract_id=$1
-         AND date::date >= $2::date
-         AND status NOT IN ('Geannuleerd','Afgerond')`,
-      [contractId, new Date(startDate).toISOString()]
-    );
-
-    const { computeNextVisit } = await import("./contracts.js");
-    let current = new Date(startDate);
-    current.setHours(9, 0, 0, 0);
-    const end = new Date(current);
-    end.setMonth(end.getMonth() + 12);
-
-    let count = 0;
-    while (current <= end) {
-      const best = await findBestWorkday(current, memberId || null, contractId);
-      const pid = uuidv4();
-      const comment = count === 0 ? seedComment : null;
-
-      await client.query(
-        `INSERT INTO planning (id, contract_id, member_id, date, status, comment, created_at)
-         VALUES ($1,$2,$3,$4,'Gepland',$5,now())`,
-        [pid, contractId, memberId || null, best.toISOString(), comment]
-      );
-
-      try {
-        await fetch(`${process.env.APP_URL}/api/planning/auto-assign/${pid}`, { method: "POST" });
-      } catch {}
-
-      count++;
-      current = new Date(computeNextVisit(current, freq));
-    }
-
-    await client.query("COMMIT");
-    res.json({ updated: count });
-  } catch (err) {
-    try { await client.query("ROLLBACK"); } catch {}
-    console.error("❌ Fout bij update-frequency:", err.message);
-    res.status(500).json({ error: "Update frequentie mislukt" });
-  } finally {
-    client.release();
+    console.warn("Auto-assign error:", err.message);
+    res.json({ ok: true, planningId: req.params.id });
   }
 });
 
