@@ -213,63 +213,82 @@ async function renderClients() {
   );
 
   // ✅ Nieuw klant toevoegen
-  document.getElementById("newClientBtn").onclick = () =>
-    openModal("Nieuwe Klant", [
-      { id: "name", label: "Naam" },
-      { id: "email", label: "E-mail" },
-      { id: "phone", label: "Telefoon" },
-      { id: "address", label: "Adres" },
-      { id: "houseNumber", label: "Huisnummer" },
-      { id: "city", label: "Plaats" },
-      { id: "typeKlant", label: "Type Klant", type: "select", options: ["Particulier", "Zakelijk"], value: "Particulier" },
-      { id: "bedrijfsnaam", label: "Bedrijfsnaam", hidden: true },
-      { id: "kvk", label: "KvK", hidden: true },
-      { id: "btw", label: "BTW", hidden: true },
-      { id: "verzendMethode", label: "Verzendmethode", type: "select", options: ["Whatsapp", "Email"], value: "Email" },
-      { id: "tag", label: "Tag", type: "select", options: settings.tags },
+document.getElementById("newClientBtn").onclick = () =>
+  openModal("Nieuwe Klant", [
+    { id: "name", label: "Naam" },
+    { id: "email", label: "E-mail" },
+    { id: "phone", label: "Telefoon" },
+    { id: "address", label: "Adres" },
+    { id: "houseNumber", label: "Huisnummer" },
+    { id: "city", label: "Plaats" },
+    { id: "typeKlant", label: "Type Klant", type: "select", options: ["Particulier", "Zakelijk"], value: "Particulier" },
+    { id: "bedrijfsnaam", label: "Bedrijfsnaam", hidden: true },
+    { id: "kvk", label: "KvK", hidden: true },
+    { id: "btw", label: "BTW", hidden: true },
+    { id: "verzendMethode", label: "Verzendmethode", type: "select", options: ["Whatsapp", "Email"], value: "Email" },
+    { id: "tag", label: "Tag", type: "select", options: settings.tags },
 
-      // ---- Contractsectie ----
-      { id: "contract_typeService", label: "Contract: Type Service", type: "multiselect", options: settings.typeServices },
-      { id: "contract_frequency", label: "Contract: Frequentie", type: "select", options: settings.frequencies },
-      { id: "contract_description", label: "Contract: Beschrijving" },
-      { id: "contract_priceInc", label: "Contract: Prijs incl. (€)" },
-      { id: "contract_vat", label: "Contract: BTW (%)", type: "select", options: ["21", "9", "0"], value: "21" },
-      { id: "contract_lastVisit", label: "Contract: Laatste bezoek", type: "date" },
-    ], async (vals) => {
-      try {
-        // 🔹 Klant opslaan
-        const res = await fetch("/api/clients", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(vals),
-        });
+    // ---- Contractsectie ----
+    { id: "contract_typeService", label: "Contract: Type Service", type: "multiselect", options: settings.typeServices },
+    { id: "contract_frequency", label: "Contract: Frequentie", type: "select", options: settings.frequencies },
+    { id: "contract_description", label: "Contract: Beschrijving" },
+    { id: "contract_priceInc", label: "Contract: Prijs incl. (€)" },
+    { id: "contract_vat", label: "Contract: BTW (%)", type: "select", options: ["21", "9", "0"], value: "21" },
+    { id: "contract_lastVisit", label: "Contract: Laatste bezoek", type: "date" },
+  ], async (vals) => {
+    // 🔄 Automatische BTW% koppeling aan Type Klant
+    setTimeout(() => {
+      const modal = document.querySelector(".modal-card");
+      if (!modal) return;
 
-        if (!res.ok) {
-          showToast("Fout bij opslaan van klant", "error");
-          return;
-        }
+      const typeSelect = modal.querySelector("select[name='typeKlant']");
+      const vatSelect = modal.querySelector("select[name='contract_vat']");
 
-        const klant = await res.json();
-        showToast(`Klant ${klant.name} aangemaakt`, "success");
-
-        // Klant toevoegen aan lokale lijst
-        await renderClients();
-
-        // 🔹 Indien contractvelden ingevuld zijn → contractlijst vernieuwen
-        if (vals.contract_typeService || vals.contract_description) {
-          const cRes = await fetch("/api/contracts");
-          if (cRes.ok) {
-            contracts = await cRes.json();
-            showToast("Contract gekoppeld en bijgewerkt", "success");
+      if (typeSelect && vatSelect) {
+        typeSelect.addEventListener("change", () => {
+          if (typeSelect.value === "Zakelijk") {
+            vatSelect.value = "21";
+          } else if (typeSelect.value === "Particulier") {
+            vatSelect.value = "0";
           }
-        }
-
-        renderClients();
-      } catch (err) {
-        console.error("❌ Fout bij opslaan klant:", err);
-        showToast("Onverwachte fout bij opslaan klant", "error");
+        });
       }
-    });
+    }, 100);
+
+    try {
+      // 🔹 Klant opslaan
+      const res = await fetch("/api/clients", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(vals),
+      });
+
+      if (!res.ok) {
+        showToast("Fout bij opslaan van klant", "error");
+        return;
+      }
+
+      const klant = await res.json();
+      showToast(`Klant ${klant.name} aangemaakt`, "success");
+
+      // Klant toevoegen aan lokale lijst
+      clients.push(klant);
+
+      // 🔹 Indien contractvelden ingevuld zijn → contractlijst vernieuwen
+      if (vals.contract_typeService || vals.contract_description) {
+        const cRes = await fetch("/api/contracts");
+        if (cRes.ok) {
+          contracts = await cRes.json();
+          showToast("Contract gekoppeld en bijgewerkt", "success");
+        }
+      }
+
+      renderClients();
+    } catch (err) {
+      console.error("❌ Fout bij opslaan klant:", err);
+      showToast("Onverwachte fout bij opslaan klant", "error");
+    }
+  });
 
   // ✅ Import knop
   document.getElementById("importClientsBtn").onclick = async () => {
