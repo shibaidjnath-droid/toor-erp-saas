@@ -401,10 +401,14 @@ async function renderContracts() {
     ]);
 
     // ✅ Tabellen renderen
-    list.innerHTML = tableHTML(
-      ["Klant", "Type service", "Frequentie", "Beschrijving", "Prijs incl.", "BTW %", "Laatste bezoek", "Volgende bezoek"],
-      rows
-    );
+    list.innerHTML = `
+      <div class="overflow-y-auto max-h-[70vh] relative">
+        ${tableHTML(
+          ["Klant", "Type service", "Frequentie", "Beschrijving", "Prijs incl.", "BTW %", "Laatste bezoek", "Volgende bezoek"],
+          rows
+        )}
+      </div>
+    `;
 
     // ✅ Klik op rij = open contractdetail
     list.querySelectorAll("tbody tr").forEach((tr, i) =>
@@ -1146,10 +1150,14 @@ async function renderMembers() {
       m.end_date ? m.end_date.split("T")[0] : "-"
     ]);
 
-    list.innerHTML = tableHTML(
+    list.innerHTML = `
+    <div class="overflow-y-auto max-h-[70vh] relative">
+    ${tableHTML(
       ["Naam", "E-mail", "Telefoon", "Rol(len)", "Status", "Tot en met"],
       rows
-    );
+    )}
+    </div>
+    `;
 
     // Klik op rij = open detail
     list.querySelectorAll("tbody tr").forEach((tr, i) =>
