@@ -6,7 +6,6 @@
   <title>TOOR ERP SaaS Dashboard</title>
   <link rel="stylesheet" href="/css/style.css" />
 
-
   <!-- ✅ Tailwind via CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -24,56 +23,76 @@
       },
     };
   </script>
+
+  <style>
+    /* ---------- Modal Styling ---------- */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    .modal-card {
+      background: white;
+      color: #111;
+      padding: 1.5rem;
+      border-radius: 0.75rem;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+      width: 400px;
+      max-width: 95%;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    .dark .modal-card {
+      background: #1f2937;
+      color: #f3f4f6;
+    }
+    .form-field { margin-bottom: 0.75rem; }
+    .form-field label { display:block; font-weight:600; margin-bottom:0.25rem; }
+    .input, .select {
+      width: 100%;
+      border: 1px solid #ccc;
+      border-radius: 0.375rem;
+      padding: 0.4rem 0.6rem;
+      background: #fff;
+      color: #111;
+    }
+    .dark .input, .dark .select {
+      background: #374151;
+      border-color: #4b5563;
+      color: #f3f4f6;
+    }
+    .btn { padding: 0.4rem 0.8rem; border-radius: 0.375rem; font-size: 0.9rem; }
+    .btn-ok { background:#2563eb;color:white; }
+    .btn-secondary { background:#e5e7eb;color:#111; }
+    .btn-warn { background:#dc2626;color:white; }
+    .btn:hover { opacity:0.9; }
+
+    /* ---------- Scrollbare lijsten ---------- */
+    .tab {
+      display: flex;
+      flex-direction: column;
+      height: calc(100vh - 220px); /* ruimte voor header + tabs */
+    }
+    .tab > .table-wrapper {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding-bottom: 1rem;
+    }
+    .table-wrapper::-webkit-scrollbar { width: 8px; }
+    .table-wrapper::-webkit-scrollbar-thumb {
+      background-color: rgba(0,0,0,0.2);
+      border-radius: 4px;
+    }
+    .dark .table-wrapper::-webkit-scrollbar-thumb {
+      background-color: rgba(255,255,255,0.2);
+    }
+  </style>
 </head>
-<style>
-  /* ---------- Modal Styling ---------- */
-  .modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.5);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 1000;
-  }
-.modal-card {
-  background: white;
-  color: #111;
-  padding: 1.5rem;
-  border-radius: 0.75rem;
-  box-shadow: 0 10px 25px rgba(0,0,0,0.25);
-  width: 400px;
-  max-width: 95%;
-  max-height: 90vh;        /* 🔹 zorgt dat de kaart niet groter wordt dan scherm */
-  overflow-y: auto;        /* 🔹 maakt verticale scroll mogelijk */
-}
-
-  .dark .modal-card {
-    background: #1f2937;
-    color: #f3f4f6;
-  }
-  .form-field { margin-bottom: 0.75rem; }
-  .form-field label { display:block; font-weight:600; margin-bottom:0.25rem; }
-  .input, .select {
-    width: 100%;
-    border: 1px solid #ccc;
-    border-radius: 0.375rem;
-    padding: 0.4rem 0.6rem;
-    background: #fff;
-    color: #111;
-  }
-  .dark .input, .dark .select {
-    background: #374151;
-    border-color: #4b5563;
-    color: #f3f4f6;
-  }
-  .btn { padding: 0.4rem 0.8rem; border-radius: 0.375rem; font-size: 0.9rem; }
-  .btn-ok { background:#2563eb;color:white; }
-  .btn-secondary { background:#e5e7eb;color:#111; }
-  .btn-warn { background:#dc2626;color:white; }
-  .btn:hover { opacity:0.9; }
-</style>
-
 
 <body class="bg-gray-50 dark:bg-surfaceDark dark:text-gray-100 transition-colors duration-300">
 
@@ -110,15 +129,16 @@
     <!-- Klanten -->
     <section id="clients" class="tab hidden">
       <div class="flex justify-between mb-4">
-  <h2 class="text-xl font-semibold">Klanten</h2>
-  <div class="space-x-2">
-    <button id="importClientsBtn" class="bg-green-600 text-white px-3 py-2 rounded hover:bg-green-700">📥 Import</button>
-    <button id="exportClientsBtn" class="bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700">📤 Export</button>
-    <button id="newClientBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuw Klant</button>
-  </div>
-</div>
-
-      <div id="clientsList"></div>
+        <h2 class="text-xl font-semibold">Klanten</h2>
+        <div class="space-x-2">
+          <button id="importClientsBtn" class="bg-green-600 text-white px-3 py-2 rounded hover:bg-green-700">📥 Import</button>
+          <button id="exportClientsBtn" class="bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700">📤 Export</button>
+          <button id="newClientBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuw Klant</button>
+        </div>
+      </div>
+      <div class="table-wrapper">
+        <div id="clientsList"></div>
+      </div>
     </section>
 
     <!-- Contracten -->
@@ -127,14 +147,17 @@
         <h2 class="text-xl font-semibold">Contracten</h2>
         <button id="newContractBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuw Contract</button>
       </div>
-      <div id="contractsList"></div>
+      <div class="table-wrapper">
+        <div id="contractsList"></div>
+      </div>
     </section>
 
-   <!-- ✅ Planning -->
-<section id="planning" class="tab hidden">
-  <div id="planningList"></div>
-</section>
-
+    <!-- Planning -->
+    <section id="planning" class="tab hidden">
+      <div class="table-wrapper">
+        <div id="planningList"></div>
+      </div>
+    </section>
 
     <!-- Facturen -->
     <section id="invoices" class="tab hidden">
@@ -142,7 +165,9 @@
         <h2 class="text-xl font-semibold">Facturen</h2>
         <button id="newInvoiceBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuwe Factuur</button>
       </div>
-      <div id="invoicesList"></div>
+      <div class="table-wrapper">
+        <div id="invoicesList"></div>
+      </div>
     </section>
 
     <!-- Members -->
@@ -151,13 +176,17 @@
         <h2 class="text-xl font-semibold">Members</h2>
         <button id="newMemberBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuwe Member</button>
       </div>
-      <div id="membersList"></div>
+      <div class="table-wrapper">
+        <div id="membersList"></div>
+      </div>
     </section>
 
     <!-- Email Log -->
     <section id="emailLog" class="tab hidden">
       <h2 class="text-xl font-semibold mb-4">Email Log</h2>
-      <div id="emailLogList"></div>
+      <div class="table-wrapper">
+        <div id="emailLogList"></div>
+      </div>
     </section>
 
     <!-- Leads -->
@@ -166,7 +195,9 @@
         <h2 class="text-xl font-semibold">Leads</h2>
         <button id="newLeadBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuwe Lead</button>
       </div>
-      <div id="leadsList"></div>
+      <div class="table-wrapper">
+        <div id="leadsList"></div>
+      </div>
     </section>
 
     <!-- Offertes -->
@@ -175,7 +206,9 @@
         <h2 class="text-xl font-semibold">Offertes</h2>
         <button id="newQuoteBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuwe Offerte</button>
       </div>
-      <div id="quotesList"></div>
+      <div class="table-wrapper">
+        <div id="quotesList"></div>
+      </div>
     </section>
 
     <!-- Instellingen -->
@@ -188,19 +221,23 @@
         </div>
       </div>
 
-      <div id="emailTemplateSettings"></div>
-      <div id="tagsSettings"></div>
-      <div id="typeServiceSettings"></div>
-      <div id="frequenciesSettings"></div>
-      <div id="rolesSettings"></div>
+      <div class="table-wrapper space-y-8">
+        <div id="emailTemplateSettings"></div>
+        <div id="tagsSettings"></div>
+        <div id="typeServiceSettings"></div>
+        <div id="frequenciesSettings"></div>
+        <div id="rolesSettings"></div>
+      </div>
     </section>
 
-    <!-- 🔍 Zoekresultaten -->
+    <!-- Zoekresultaten -->
     <section id="searchResults" class="tab hidden">
       <div class="flex justify-between mb-4">
         <h2 class="text-xl font-semibold">Zoekresultaten</h2>
       </div>
-      <div id="searchResultsList"></div>
+      <div class="table-wrapper">
+        <div id="searchResultsList"></div>
+      </div>
     </section>
 
   </main>
@@ -208,14 +245,14 @@
   <!-- Toast container -->
   <div id="toastContainer" class="fixed bottom-5 right-5 flex flex-col gap-3 z-50"></div>
 
-  <!-- 🧩 Debug Panel -->
-<div id="debugPanel"
-     class="fixed bottom-0 left-0 right-0 max-h-40 overflow-y-auto
-            bg-gray-900 text-gray-100 px-3 py-2 text-xs font-mono
-            border-t border-gray-700 opacity-70 hover:opacity-100">
-</div>
+  <!-- Debug Panel -->
+  <div id="debugPanel"
+       class="fixed bottom-0 left-0 right-0 max-h-40 overflow-y-auto
+              bg-gray-900 text-gray-100 px-3 py-2 text-xs font-mono
+              border-t border-gray-700 opacity-70 hover:opacity-100">
+  </div>
 
-  <!-- ✅ Correct script pad -->
+  <!-- Scripts -->
   <script src="/js/dashboard.js" defer></script>
 </body>
 </html>
