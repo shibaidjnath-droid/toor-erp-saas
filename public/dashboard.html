@@ -71,19 +71,39 @@
     .btn-warn { background:#dc2626;color:white; }
     .btn:hover { opacity:0.9; }
 
-    /* ---------- Scrollbare lijsten ---------- */
-    .tab {
-      display: flex;
-      flex-direction: column;
-      height: calc(100vh - 220px); /* ruimte voor header + tabs */
-    }
-    .tab > .table-wrapper {
-      flex: 1;
-      overflow-y: auto;
-      overflow-x: hidden;
-      padding-bottom: 1rem;
-      position: relative;
-    }
+  /* ---------- Scrollbare lijsten + sticky headers ---------- */
+.tab {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 220px);
+}
+
+.table-wrapper {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+  max-height: 100%;
+}
+
+.table-wrapper table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table-wrapper thead th {
+  position: sticky;
+  top: 0;
+  background: #f9fafb;
+  z-index: 5;
+  border-bottom: 2px solid #ddd;
+}
+
+.dark .table-wrapper thead th {
+  background: #1f2937;
+  border-bottom-color: #374151;
+}
+
     .table-wrapper::-webkit-scrollbar { width: 8px; }
     .table-wrapper::-webkit-scrollbar-thumb {
       background-color: rgba(0,0,0,0.2);
