@@ -212,8 +212,8 @@ async function renderClients() {
     tr.addEventListener("click", () => openClientDetail(clients[i]))
   );
 
-  // ✅ Nieuw klant toevoegen
-document.getElementById("newClientBtn").onclick = () =>
+// ✅ Nieuw klant toevoegen
+document.getElementById("newClientBtn").onclick = () => {
   openModal("Nieuwe Klant", [
     { id: "name", label: "Naam" },
     { id: "email", label: "E-mail" },
@@ -224,7 +224,7 @@ document.getElementById("newClientBtn").onclick = () =>
     { id: "typeKlant", label: "Type Klant", type: "select", options: ["Particulier", "Zakelijk"], value: "Particulier" },
     { id: "bedrijfsnaam", label: "Bedrijfsnaam", hidden: true },
     { id: "kvk", label: "KvK", hidden: true },
-    { id: "btw", label: "BTW", hidden: true },
+    { id: "btw", label: "BTW-nummer", hidden: true },
     { id: "verzendMethode", label: "Verzendmethode", type: "select", options: ["Whatsapp", "Email"], value: "Email" },
     { id: "tag", label: "Tag", type: "select", options: settings.tags },
 
@@ -236,59 +236,59 @@ document.getElementById("newClientBtn").onclick = () =>
     { id: "contract_vat", label: "Contract: BTW (%)", type: "select", options: ["21", "9", "0"], value: "21" },
     { id: "contract_lastVisit", label: "Contract: Laatste bezoek", type: "date" },
   ], async (vals) => {
-    // 🔄 Automatische BTW% koppeling aan Type Klant
-    setTimeout(() => {
-      const modal = document.querySelector(".modal-card");
-      if (!modal) return;
-
-      const typeSelect = modal.querySelector("select[name='typeKlant']");
-      const vatSelect = modal.querySelector("select[name='contract_vat']");
-
-      if (typeSelect && vatSelect) {
-        typeSelect.addEventListener("change", () => {
-          if (typeSelect.value === "Zakelijk") {
-            vatSelect.value = "21";
-          } else if (typeSelect.value === "Particulier") {
-            vatSelect.value = "0";
-          }
-        });
-      }
-    }, 100);
-
     try {
-      // 🔹 Klant opslaan
       const res = await fetch("/api/clients", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(vals),
       });
-
-      if (!res.ok) {
-        showToast("Fout bij opslaan van klant", "error");
-        return;
-      }
+      if (!res.ok) return showToast("Fout bij opslaan klant", "error");
 
       const klant = await res.json();
       showToast(`Klant ${klant.name} aangemaakt`, "success");
-
-      // Klant toevoegen aan lokale lijst
       clients.push(klant);
-
-      // 🔹 Indien contractvelden ingevuld zijn → contractlijst vernieuwen
       if (vals.contract_typeService || vals.contract_description) {
         const cRes = await fetch("/api/contracts");
-        if (cRes.ok) {
-          contracts = await cRes.json();
-          showToast("Contract gekoppeld en bijgewerkt", "success");
-        }
+        if (cRes.ok) contracts = await cRes.json();
       }
-
       renderClients();
     } catch (err) {
-      console.error("❌ Fout bij opslaan klant:", err);
-      showToast("Onverwachte fout bij opslaan klant", "error");
+      console.error("❌ Opslaan klant:", err);
+      showToast("Onverwachte fout", "error");
     }
   });
+
+  // 🔄 Automatische veldlogica (Type Klant → BTW% en bedrijfsvelden)
+  setTimeout(() => {
+    const modal = document.querySelector(".modal-card");
+    if (!modal) return;
+
+    const typeSelect = modal.querySelector("select[name='typeKlant']");
+    const vatSelect = modal.querySelector("select[name='contract_vat']");
+    const bedrijfsnaamField = modal.querySelector("[name='bedrijfsnaam']")?.closest(".form-field");
+    const kvkField = modal.querySelector("[name='kvk']")?.closest(".form-field");
+    const btwField = modal.querySelector("[name='btw']")?.closest(".form-field");
+
+    function updateFields() {
+      if (typeSelect.value === "Zakelijk") {
+        vatSelect.value = "21";
+        bedrijfsnaamField.style.display = "";
+        kvkField.style.display = "";
+        btwField.style.display = "";
+      } else {
+        vatSelect.value = "0";
+        bedrijfsnaamField.style.display = "none";
+        kvkField.style.display = "none";
+        btwField.style.display = "none";
+      }
+    }
+
+    updateFields();
+    typeSelect.addEventListener("change", updateFields);
+  }, 100);
+};
+
+
 
   // ✅ Import knop
   document.getElementById("importClientsBtn").onclick = async () => {

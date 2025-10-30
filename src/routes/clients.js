@@ -119,8 +119,8 @@ try {
         clientId,
         client.contract_frequency,
         client.contract_description || "",
-        parseFloat(client.contract_priceInc) || 0,
-        parseFloat(client.contract_vat) || 21,
+        parseFloat(client.contract_priceInc) || 0,      
+        client.contract_vat !== undefined && client.contract_vat !== "" ? parseFloat(client.contract_vat) : 21,
         JSON.stringify(safeServices), // ✅ JSON-veilig
         client.contract_lastVisit || null,
         nextVisit,
