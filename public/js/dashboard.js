@@ -202,10 +202,15 @@ async function renderClients() {
     c.status || "Active"
   ]);
 
-  list.innerHTML = tableHTML(
-    ["Naam", "E-mail", "Telefoon", "Type klant", "Verzendmethode", "Tag", "Status"],
-    rows
-  );
+ list.innerHTML = `
+  <div class="overflow-y-auto max-h-[70vh] relative">
+    ${tableHTML(
+      ["Naam", "E-mail", "Telefoon", "Type klant", "Verzendmethode", "Tag", "Status"],
+      rows
+    )}
+  </div>
+`;
+
 
   // Klik op rij = open klantdetail
   list.querySelectorAll("tbody tr").forEach((tr, i) =>
