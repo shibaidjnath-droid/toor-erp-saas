@@ -75,7 +75,7 @@
     .tab {
       display: flex;
       flex-direction: column;
-      height: calc(100vh - 220px);
+      height: calc(100vh - 220px); /* ruimte voor header + tabs */
     }
     .tab > .table-wrapper {
       flex: 1;
@@ -143,10 +143,121 @@
 
   <!-- Main Content -->
   <main class="p-4 space-y-6">
-    <!-- Alle secties blijven ongewijzigd -->
-    <!-- ✅ Elke tabelsectie heeft table-wrapper -->
-    <!-- (zoals in jouw huidige bestand) -->
-    <!-- ... -->
+
+    <!-- Klanten -->
+    <section id="clients" class="tab hidden">
+      <div class="flex justify-between mb-4">
+        <h2 class="text-xl font-semibold">Klanten</h2>
+        <div class="space-x-2">
+          <button id="importClientsBtn" class="bg-green-600 text-white px-3 py-2 rounded hover:bg-green-700">📥 Import</button>
+          <button id="exportClientsBtn" class="bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700">📤 Export</button>
+          <button id="newClientBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuw Klant</button>
+        </div>
+      </div>
+      <div class="table-wrapper">
+        <div id="clientsList"></div>
+      </div>
+    </section>
+
+    <!-- Contracten -->
+    <section id="contracts" class="tab hidden">
+      <div class="flex justify-between mb-4">
+        <h2 class="text-xl font-semibold">Contracten</h2>
+        <button id="newContractBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuw Contract</button>
+      </div>
+      <div class="table-wrapper">
+        <div id="contractsList"></div>
+      </div>
+    </section>
+
+    <!-- Planning -->
+    <section id="planning" class="tab hidden">
+      <div class="table-wrapper">
+        <div id="planningList"></div>
+      </div>
+    </section>
+
+    <!-- Facturen -->
+    <section id="invoices" class="tab hidden">
+      <div class="flex justify-between mb-4">
+        <h2 class="text-xl font-semibold">Facturen</h2>
+        <button id="newInvoiceBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuwe Factuur</button>
+      </div>
+      <div class="table-wrapper">
+        <div id="invoicesList"></div>
+      </div>
+    </section>
+
+    <!-- Members -->
+    <section id="members" class="tab hidden">
+      <div class="flex justify-between mb-4">
+        <h2 class="text-xl font-semibold">Members</h2>
+        <button id="newMemberBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuwe Member</button>
+      </div>
+      <div class="table-wrapper">
+        <div id="membersList"></div>
+      </div>
+    </section>
+
+    <!-- Email Log -->
+    <section id="emailLog" class="tab hidden">
+      <h2 class="text-xl font-semibold mb-4">Email Log</h2>
+      <div class="table-wrapper">
+        <div id="emailLogList"></div>
+      </div>
+    </section>
+
+    <!-- Leads -->
+    <section id="leads" class="tab hidden">
+      <div class="flex justify-between mb-4">
+        <h2 class="text-xl font-semibold">Leads</h2>
+        <button id="newLeadBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuwe Lead</button>
+      </div>
+      <div class="table-wrapper">
+        <div id="leadsList"></div>
+      </div>
+    </section>
+
+    <!-- Offertes -->
+    <section id="quotes" class="tab hidden">
+      <div class="flex justify-between mb-4">
+        <h2 class="text-xl font-semibold">Offertes</h2>
+        <button id="newQuoteBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuwe Offerte</button>
+      </div>
+      <div class="table-wrapper">
+        <div id="quotesList"></div>
+      </div>
+    </section>
+
+    <!-- Instellingen -->
+    <section id="settings" class="tab hidden space-y-8">
+      <div>
+        <h2 class="text-xl font-semibold mb-3">Thema Instellingen</h2>
+        <div class="flex gap-3">
+          <button id="themeLight" class="border px-4 py-2 rounded">Licht</button>
+          <button id="themeDark" class="border px-4 py-2 rounded">Donker</button>
+        </div>
+      </div>
+
+      <div class="table-wrapper space-y-8">
+        <div id="emailTemplateSettings"></div>
+        <div id="tagsSettings"></div>
+        <div id="typeServiceSettings"></div>
+        <div id="frequenciesSettings"></div>
+        <div id="rolesSettings"></div>
+      </div>
+    </section>
+
+    <!-- Zoekresultaten -->
+    <section id="searchResults" class="tab hidden">
+      <div class="flex justify-between mb-4">
+        <h2 class="text-xl font-semibold">Zoekresultaten</h2>
+      </div>
+      <div class="table-wrapper">
+        <div id="searchResultsList"></div>
+      </div>
+    </section>
+
   </main>
 
   <!-- Toast container -->
