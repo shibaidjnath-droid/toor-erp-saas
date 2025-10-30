@@ -20,11 +20,9 @@ const configMap = {
       LEFT JOIN contracts ct ON c.id = ct.contact_id
     `,
     columns: [
-      // contact velden
       "c.id", "c.name", "c.email", "c.phone", "c.address", "c.house_number",
       "c.city", "c.type_klant", "c.bedrijfsnaam", "c.kvk", "c.btw",
       "c.verzend_methode", "c.tag", "c.status", "c.created_at",
-      // contract velden
       "ct.id AS contract_id", "ct.type_service", "ct.frequency", "ct.description",
       "ct.price_ex", "ct.price_inc", "ct.vat_pct", "ct.last_visit", "ct.next_visit"
     ],
@@ -48,13 +46,11 @@ router.get("/", async (req, res) => {
       ORDER BY c.created_at DESC
     `);
 
-    // Convert to XLSX
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, type);
     const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
 
-    // Response headers
     res.setHeader(
       "Content-Disposition",
       `attachment; filename=${type}_export_${new Date().toISOString().split("T")[0]}.xlsx`
@@ -86,11 +82,20 @@ router.post("/", upload.single("file"), async (req, res) => {
     fs.unlinkSync(req.file.path); // verwijder temp-file
 
     let inserted = 0;
-    for (const r of rows) {
-      if (!r.name || !r.email) continue; // minimale vereisten
 
-      // ✅ 1. Nieuwe klant
+    for (const r of rows) {
+      if (!r.name || !r.email) continue;
+
       const clientId = uuidv4();
+
+      // ✅ Veilige JSON-handling voor tag
+      let safeTag = [];
+      try {
+        if (Array.isArray(r.tag)) safeTag = r.tag;
+        else if (typeof r.tag === "string" && r.tag.trim() !== "")
+          safeTag = [r.tag.trim()];
+      } catch { safeTag = []; }
+
       await pool.query(
         `INSERT INTO contacts (
           id, name, email, phone, address, house_number, city,
@@ -113,16 +118,24 @@ router.post("/", upload.single("file"), async (req, res) => {
           ["Whatsapp", "Email"].includes(r.verzendMethode)
             ? r.verzendMethode
             : "Email",
-          r.tag || null,
+          JSON.stringify(safeTag), // ✅ Altijd geldige JSON-array
           r.status || "Active",
         ]
       );
 
-      // ✅ 2. Eventueel contract koppelen
+      // ✅ Eventueel gekoppeld contract
       if (r.contract_description || r.contract_typeService) {
         const vat = parseFloat(r.contract_vat || 21);
         const priceInc = parseFloat(r.contract_priceInc || 0);
         const priceEx = +(priceInc / (1 + vat / 100)).toFixed(2);
+
+        // ✅ Veilige JSON-handling voor type_service
+        let safeServices = [];
+        try {
+          if (Array.isArray(r.contract_typeService)) safeServices = r.contract_typeService;
+          else if (typeof r.contract_typeService === "string" && r.contract_typeService.trim() !== "")
+            safeServices = [r.contract_typeService.trim()];
+        } catch { safeServices = []; }
 
         await pool.query(
           `INSERT INTO contracts (
@@ -132,11 +145,7 @@ router.post("/", upload.single("file"), async (req, res) => {
           [
             uuidv4(),
             clientId,
-            JSON.stringify(
-              Array.isArray(r.contract_typeService)
-                ? r.contract_typeService
-                : [r.contract_typeService || ""]
-            ),
+            JSON.stringify(safeServices), // ✅ Altijd geldige JSON-array
             r.contract_frequency || "Maand",
             r.contract_description || "",
             priceEx,
