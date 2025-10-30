@@ -81,6 +81,19 @@ router.post("/", upload.single("file"), async (req, res) => {
     const rows = XLSX.utils.sheet_to_json(sheet);
     fs.unlinkSync(req.file.path); // verwijder temp-file
 
+    // ✅ Hulpfunctie om Excel-datums om te zetten naar ISO-formaat (YYYY-MM-DD)
+function excelDateToISO(val) {
+  if (!val) return null;
+  if (typeof val === "number") {
+    // Excel telt dagen sinds 1900-01-01, met bugfix voor 1900-02-29
+    const baseDate = new Date(1899, 11, 30);
+    const date = new Date(baseDate.getTime() + val * 86400000);
+    return date.toISOString().split("T")[0];
+  }
+  // Als het al een string is, probeer te parsen
+  const d = new Date(val);
+  return isNaN(d) ? null : d.toISOString().split("T")[0];
+}
     let inserted = 0;
 
     for (const r of rows) {
@@ -151,7 +164,7 @@ router.post("/", upload.single("file"), async (req, res) => {
             priceEx,
             priceInc,
             vat,
-            r.contract_lastVisit || null,
+            excelDateToISO(r.contract_lastVisit) || null,
             new Date().toISOString(),
           ]
         );
