@@ -203,9 +203,12 @@ async function renderClients() {
     clients = await res.json();
   }
 
-  // 🔹 Zoek + filters boven de tabel (geen knoppen!)
-  list.innerHTML = `
-    <div class="flex flex-wrap items-center gap-2 mb-3">
+ // 🔹 Zoek + filters + knoppen rechts (zoals Planning)
+list.innerHTML = `
+  <div class="flex flex-wrap justify-between mb-3 items-center">
+    <h2 class="text-xl font-semibold">Klanten</h2>
+
+    <div class="flex flex-wrap items-center gap-2 justify-end">
       <input id="clientSearch" type="text" placeholder="Zoek..." 
         class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700" />
 
@@ -228,10 +231,16 @@ async function renderClients() {
         <option value="">Verzendmethode</option>
         ${["Email", "Whatsapp"].map(t => `<option value="${t}">${t}</option>`).join("")}
       </select>
-    </div>
 
-    <div class="overflow-y-auto max-h-[70vh] relative" id="clientsTable"></div>
-  `;
+      <button id="importClientsBtn" class="bg-green-600 text-white px-3 py-2 rounded hover:bg-green-700">📥 Import</button>
+      <button id="exportClientsBtn" class="bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700">📤 Export</button>
+      <button id="newClientBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuw Klant</button>
+    </div>
+  </div>
+
+  <div class="overflow-y-auto max-h-[70vh] relative" id="clientsTable"></div>
+`;
+
 
   const tableContainer = document.getElementById("clientsTable");
 
