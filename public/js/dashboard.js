@@ -274,22 +274,14 @@ async function renderClients() {
     );
   }
 
-  // 🔄 Events
+  // 🔄 Filters activeren
   ["filterType", "filterTag", "filterStatus", "filterMethod", "clientSearch"].forEach(id =>
     document.getElementById(id).addEventListener("input", renderFiltered)
   );
 
   renderFiltered();
 
-  // ✅ Knoppen blijven zoals in HTML: handlers koppelen
-  document.getElementById("newClientBtn").onclick = () => openNewClientModal();
-  document.getElementById("importClientsBtn").onclick = () => importClients();
-  document.getElementById("exportClientsBtn").onclick = () => exportClients();
-}
-
-
-
-  // ✅ Nieuw klant toevoegen
+  // ✅ Nieuw klant toevoegen (volledige bestaande logica)
   document.getElementById("newClientBtn").onclick = () => {
     openModal("Nieuwe Klant", [
       { id: "name", label: "Naam" },
@@ -337,13 +329,11 @@ async function renderClients() {
     setTimeout(() => {
       const modal = document.querySelector(".modal-card");
       if (!modal) return;
-
       const typeSelect = modal.querySelector("select[name='typeKlant']");
       const vatSelect = modal.querySelector("select[name='contract_vat']");
       const bedrijfsnaamField = modal.querySelector("[name='bedrijfsnaam']")?.closest(".form-field");
       const kvkField = modal.querySelector("[name='kvk']")?.closest(".form-field");
       const btwField = modal.querySelector("[name='btw']")?.closest(".form-field");
-
       function updateFields() {
         if (typeSelect.value === "Zakelijk") {
           vatSelect.value = "21";
@@ -357,7 +347,6 @@ async function renderClients() {
           btwField.style.display = "none";
         }
       }
-
       updateFields();
       typeSelect.addEventListener("change", updateFields);
     }, 100);
@@ -373,7 +362,6 @@ async function renderClients() {
       if (!file) return;
       const formData = new FormData();
       formData.append("file", file);
-
       const res = await fetch("/api/import-export?type=clients", {
         method: "POST",
         body: formData,
@@ -402,6 +390,7 @@ async function renderClients() {
     window.URL.revokeObjectURL(url);
     showToast("Export succesvol gedownload", "success");
   };
+}
 
 
 
