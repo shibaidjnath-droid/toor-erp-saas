@@ -441,44 +441,94 @@ function openClientDetail(c) {
   }));
 }
 
-// 📄 Contracten
+// ---------- 📄 Contracten ----------
 async function renderContracts() {
   const list = document.getElementById("contractsList");
 
   try {
-    // ✅ Altijd live data uit DB ophalen
+    // ✅ Live data ophalen
     const res = await fetch("/api/contracts");
     if (!res.ok) throw new Error("Fout bij ophalen contracten");
     contracts = await res.json();
 
-    // ✅ Tabelrijen genereren
-    const rows = contracts.map(c => [
-      c.client_name || "-",                                        // gekoppelde klantnaam via SQL JOIN
-      Array.isArray(c.type_service) ? c.type_service.join(", ") : (c.type_service || "-"),
-      c.frequency || "-",
-      c.description || "-",
-      c.price_inc ? `€${Number(c.price_inc).toFixed(2)}` : "€0.00",
-      c.vat_pct ? `${c.vat_pct}%` : "-",
-      c.last_visit ? c.last_visit.split("T")[0] : "-",
-      c.next_visit ? c.next_visit.split("T")[0] : "-"
-    ]);
-
-    // ✅ Tabellen renderen
+    // 🔹 Filters + zoekveld boven tabel
     list.innerHTML = `
-      <div class="overflow-y-auto max-h-[70vh] relative">
-        ${tableHTML(
-          ["Klant", "Type service", "Frequentie", "Beschrijving", "Prijs incl.", "BTW", "Laatste bezoek", "Volgende bezoek"],
-          rows
-        )}
+      <div class="flex flex-wrap justify-between mb-3 items-center">
+        <h2 class="text-xl font-semibold">Contracten</h2>
+
+        <div class="flex flex-wrap items-center gap-2 justify-end">
+          <input id="contractSearch" type="text" placeholder="Zoek..."
+            class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700" />
+
+          <select id="filterFrequency" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
+            <option value="">Frequentie</option>
+            ${(settings.frequencies || []).map(f => `<option value="${f}">${f}</option>`).join("")}
+          </select>
+
+          <select id="filterTypeService" multiple size="1"
+            class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700 min-w-[140px]">
+            ${(settings.typeServices || []).map(s => `<option value="${s}">${s}</option>`).join("")}
+          </select>
+        </div>
       </div>
+
+      <div class="overflow-y-auto max-h-[70vh] relative" id="contractsTable"></div>
     `;
 
-    // ✅ Klik op rij = open contractdetail
-    list.querySelectorAll("tbody tr").forEach((tr, i) =>
-      tr.addEventListener("click", () => openContractDetail(contracts[i]))
-    );
+    const tableContainer = document.getElementById("contractsTable");
 
-    // ✅ Nieuw contract toevoegen
+    // 🔍 Filterfunctie
+    function renderFiltered() {
+      const fSearch = document.getElementById("contractSearch").value.toLowerCase();
+      const fFreq = document.getElementById("filterFrequency").value.toLowerCase();
+      const fTypeServices = Array.from(document.getElementById("filterTypeService").selectedOptions).map(o => o.value.toLowerCase());
+
+      const filtered = contracts.filter(c => {
+        const services = Array.isArray(c.type_service)
+          ? c.type_service.map(s => s.toLowerCase())
+          : [(c.type_service || "").toLowerCase()];
+        const matchesSearch = !fSearch || Object.values(c).join(" ").toLowerCase().includes(fSearch);
+        const matchesFreq = !fFreq || (c.frequency || "").toLowerCase() === fFreq;
+        const matchesType =
+          !fTypeServices.length ||
+          fTypeServices.every(sel => services.includes(sel));
+
+        return matchesSearch && matchesFreq && matchesType;
+      });
+
+      // 🔹 Tabel renderen
+      const rows = filtered.map(c => [
+        c.client_name || "-",
+        Array.isArray(c.type_service) ? c.type_service.join(", ") : (c.type_service || "-"),
+        c.frequency || "-",
+        c.description || "-",
+        c.price_inc ? `€${Number(c.price_inc).toFixed(2)}` : "€0.00",
+        c.vat_pct ? `${c.vat_pct}%` : "-",
+        c.last_visit ? c.last_visit.split("T")[0] : "-",
+        c.next_visit ? c.next_visit.split("T")[0] : "-"
+      ]);
+
+      tableContainer.innerHTML = tableHTML(
+        ["Klant", "Type Service", "Frequentie", "Beschrijving", "Prijs incl.", "BTW", "Laatste bezoek", "Volgende bezoek"],
+        rows
+      );
+
+      // 🔗 Klik op rij → open detail
+      tableContainer.querySelectorAll("tbody tr").forEach((tr, i) =>
+        tr.addEventListener("click", () => openContractDetail(filtered[i]))
+      );
+    }
+
+    // 🔄 Events koppelen
+    ["contractSearch", "filterFrequency", "filterTypeService"].forEach(id =>
+      document.getElementById(id).addEventListener("input", renderFiltered)
+    );
+    document.getElementById("filterTypeService").addEventListener("change", renderFiltered);
+
+    // ✅ Eerste render
+    renderFiltered();
+
+    // ✅ Nieuw contract toevoegen (ongewijzigd)
     document.getElementById("newContractBtn").onclick = () =>
       openModal("Nieuw Contract", [
         { id: "clientId", label: "Klant", type: "select", options: clients.map(c => c.name) },
@@ -490,7 +540,6 @@ async function renderContracts() {
         { id: "lastVisit", label: "Laatste bezoek", type: "date" },
       ], async (vals) => {
         try {
-          // Zoek contactId van geselecteerde klant
           const client = clients.find(c => c.name === vals.clientId);
           if (!client) return showToast("Selecteer een bestaande klant", "error");
 
@@ -499,28 +548,24 @@ async function renderContracts() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ ...vals, clientId: client.id }),
           });
-
-          if (!res.ok) {
-            showToast("Fout bij opslaan contract", "error");
-            return;
-          }
+          if (!res.ok) return showToast("Fout bij opslaan contract", "error");
 
           const contract = await res.json();
-          contracts.unshift(contract); // bovenaan tonen
+          contracts.unshift(contract);
           showToast("Contract toegevoegd", "success");
-
-          // 🔁 Direct opnieuw laden vanuit DB om lijst te verversen
           await renderContracts();
         } catch (err) {
           console.error("❌ Fout bij opslaan contract:", err);
           showToast("Onverwachte fout bij opslaan contract", "error");
         }
       });
+
   } catch (err) {
     console.error("❌ Fout bij laden contracten:", err);
     showToast("Fout bij laden contractenlijst", "error");
   }
 }
+
 
 
 
