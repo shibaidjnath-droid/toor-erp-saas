@@ -457,79 +457,75 @@ async function renderContracts() {
         <h2 class="text-xl font-semibold">Contracten</h2>
 
         <div class="flex flex-wrap items-center gap-2 justify-end">
+          <!-- 🔍 Zoek -->
           <input id="contractSearch" type="text" placeholder="Zoek..."
             class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700" />
 
+          <!-- 🔁 Frequentie filter -->
           <select id="filterFrequency" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
             <option value="">Frequentie</option>
             ${(settings.frequencies || []).map(f => `<option value="${f}">${f}</option>`).join("")}
           </select>
 
+          <!-- ✅ Type Service multiselect -->
           <div class="relative">
-          <button id="filterTypeServiceBtn"
-          class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700 min-w-[140px] flex items-center justify-between">
-          <span id="filterTypeServiceLabel">Type Service</span>
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 ml-1 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-          </svg>
-          </button>
-          <div id="filterTypeServiceMenu"
-          class="absolute right-0 mt-1 bg-white dark:bg-gray-800 border dark:border-gray-700 rounded shadow-md z-50 hidden max-h-48 overflow-y-auto w-48">
-          ${(settings.typeServices || [])
-          .map(s => `
-          <label class="flex items-center px-2 py-1 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
-          <input type="checkbox" value="${s}" class="mr-2 typeServiceChk"> ${s}
-          </label>
-        `).join("")}
+            <button id="filterTypeServiceBtn"
+              class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700 min-w-[140px] flex items-center justify-between">
+              <span id="filterTypeServiceLabel">Type Service</span>
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 ml-1 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            <div id="filterTypeServiceMenu"
+              class="absolute right-0 mt-1 bg-white dark:bg-gray-800 border dark:border-gray-700 rounded shadow-md z-50 hidden max-h-48 overflow-y-auto w-48">
+              ${(settings.typeServices || [])
+                .map(s => `
+                  <label class="flex items-center px-2 py-1 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
+                    <input type="checkbox" value="${s}" class="mr-2 typeServiceChk"> ${s}
+                  </label>
+                `).join("")}
+            </div>
+          </div>
         </div>
       </div>
 
+      <!-- ✅ Scrollbare tabel -->
       <div class="overflow-y-auto max-h-[70vh] relative" id="contractsTable"></div>
     `;
-    // ▼ Dropdown open/dicht
-const btn = document.getElementById("filterTypeServiceBtn");
-const menu = document.getElementById("filterTypeServiceMenu");
-btn.onclick = (e) => {
-  e.stopPropagation();
-  menu.classList.toggle("hidden");
-};
-document.addEventListener("click", () => menu.classList.add("hidden"));
-
-// ▼ Filter logica updaten bij vinkje
-menu.querySelectorAll(".typeServiceChk").forEach(chk =>
-  chk.addEventListener("change", () => {
-    const selected = Array.from(menu.querySelectorAll(".typeServiceChk:checked")).map(c => c.value.toLowerCase());
-    const label = document.getElementById("filterTypeServiceLabel");
-    label.textContent = selected.length ? `${selected.length} geselecteerd` : "Type Service";
-    renderFiltered(selected);
-  })
-);
-
 
     const tableContainer = document.getElementById("contractsTable");
 
+    // ▼ Dropdown open/dicht
+    const btn = document.getElementById("filterTypeServiceBtn");
+    const menu = document.getElementById("filterTypeServiceMenu");
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      menu.classList.toggle("hidden");
+    };
+    document.addEventListener("click", () => menu.classList.add("hidden"));
+
     // 🔍 Filterfunctie
- function renderFiltered(selectedTypes = []) {
-  const fSearch = document.getElementById("contractSearch").value.toLowerCase();
-  const fFreq = document.getElementById("filterFrequency").value.toLowerCase();
-  const fTypeServices = selectedTypes.length
-    ? selectedTypes
-    : Array.from(document.querySelectorAll(".typeServiceChk:checked")).map(o => o.value.toLowerCase());
+    function renderFiltered(selectedTypes = []) {
+      const fSearch = document.getElementById("contractSearch").value.toLowerCase();
+      const fFreq = document.getElementById("filterFrequency").value.toLowerCase();
+      const fTypeServices = selectedTypes.length
+        ? selectedTypes
+        : Array.from(menu.querySelectorAll(".typeServiceChk:checked")).map(o => o.value.toLowerCase());
 
-  const filtered = contracts.filter(c => {
-    const services = Array.isArray(c.type_service)
-      ? c.type_service.map(s => s.toLowerCase())
-      : [(c.type_service || "").toLowerCase()];
+      const filtered = contracts.filter(c => {
+        const services = Array.isArray(c.type_service)
+          ? c.type_service.map(s => s.toLowerCase())
+          : [(c.type_service || "").toLowerCase()];
 
-    const matchesType =
-      !fTypeServices.length ||
-      fTypeServices.some(sel => services.includes(sel));
+        const matchesType =
+          !fTypeServices.length ||
+          fTypeServices.some(sel => services.includes(sel));
 
-    const matchesFreq = !fFreq || (c.frequency || "").toLowerCase() === fFreq;
-    const matchesSearch = !fSearch || Object.values(c).join(" ").toLowerCase().includes(fSearch);
+        const matchesFreq = !fFreq || (c.frequency || "").toLowerCase() === fFreq;
+        const matchesSearch = !fSearch || Object.values(c).join(" ").toLowerCase().includes(fSearch);
 
-    return matchesSearch && matchesFreq && matchesType;
-  });
+        return matchesSearch && matchesFreq && matchesType;
+      });
 
       // 🔹 Tabel renderen
       const rows = filtered.map(c => [
@@ -554,11 +550,20 @@ menu.querySelectorAll(".typeServiceChk").forEach(chk =>
       );
     }
 
-    // 🔄 Events koppelen
-    ["contractSearch", "filterFrequency", "filterTypeService"].forEach(id =>
-      document.getElementById(id).addEventListener("input", renderFiltered)
+    // ▼ Checkbox-filter
+    menu.querySelectorAll(".typeServiceChk").forEach(chk =>
+      chk.addEventListener("change", () => {
+        const selected = Array.from(menu.querySelectorAll(".typeServiceChk:checked")).map(c => c.value.toLowerCase());
+        const label = document.getElementById("filterTypeServiceLabel");
+        label.textContent = selected.length ? `${selected.length} geselecteerd` : "Type Service";
+        renderFiltered(selected);
+      })
     );
-    document.getElementById("filterTypeService").addEventListener("change", renderFiltered);
+
+    // 🔄 Events koppelen
+    ["contractSearch", "filterFrequency"].forEach(id =>
+      document.getElementById(id).addEventListener("input", () => renderFiltered())
+    );
 
     // ✅ Eerste render
     renderFiltered();
@@ -599,63 +604,6 @@ menu.querySelectorAll(".typeServiceChk").forEach(chk =>
     console.error("❌ Fout bij laden contracten:", err);
     showToast("Fout bij laden contractenlijst", "error");
   }
-}
-
-
-
-
-function openContractDetail(c) {
-  openModal(`Contract bewerken – ${c.client_name || "-"}`, [
-    { id: "frequency", label: "Frequentie", type: "select", options: settings.frequencies, value: c.frequency },
-    { id: "description", label: "Beschrijving", value: c.description },
-    { id: "priceEx", label: "Prijs excl. (€)", value: c.price_ex },
-    { id: "vatPct", label: "BTW (%)", type: "select", options: ["21", "9", "0"], value: c.vat_pct },
-    { id: "lastVisit", label: "Laatste bezoek", type: "date", value: c.last_visit ? c.last_visit.split("T")[0] : "" },
-    { id: "typeService", label: "Type service", type: "multiselect", options: settings.typeServices, value: c.type_service },
-  ], async (vals) => {
-    try {
-      const res = await fetch(`/api/contracts/${c.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          frequency: vals.frequency,
-          description: vals.description,
-          priceEx: vals.priceEx,
-          vatPct: vals.vatPct,
-          lastVisit: vals.lastVisit,
-          typeService: vals.typeService,
-        }),
-      });
-
-      if (!res.ok) {
-        showToast("Fout bij opslaan contract", "error");
-        return;
-      }
-
-      const updated = await res.json();
-      // vervang lokaal record zodat lijst direct ververst
-      Object.assign(c, updated);
-      showToast("Contract opgeslagen", "success");
-      renderContracts();
-    } catch (err) {
-      console.error("❌ Fout bij opslaan contract:", err);
-      showToast("Onverwachte fout bij opslaan contract", "error");
-    }
-  }, () => confirmDelete("contract", async () => {
-    try {
-      const res = await fetch(`/api/contracts/${c.id}`, { method: "DELETE" });
-      if (!res.ok) {
-        showToast("Fout bij verwijderen contract", "error");
-        return;
-      }
-      contracts = contracts.filter(x => x.id !== c.id);
-      showToast("Contract verwijderd", "success");
-      renderContracts();
-    } catch (err) {
-      console.error("❌ Fout bij verwijderen contract:", err);
-      showToast("Onverwachte fout bij verwijderen contract", "error");
-    }
-  }));
 }
 
 // ---------- Nieuw planning item: keuze ----------
