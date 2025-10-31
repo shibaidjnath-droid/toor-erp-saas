@@ -204,38 +204,44 @@ async function renderClients() {
   }
 
  // 🔹 Zoek + filters + knoppen rechts (zoals Planning)
-list.innerHTML = `
-  <div class="flex flex-wrap justify-between mb-3 items-center">
-    <h2 class="text-xl font-semibold">Klanten</h2>
+// 🔹 Eén regel header met alles erin
+  list.innerHTML = `
+    <div class="flex flex-wrap justify-between items-center mb-3 gap-2">
+      <h2 class="text-xl font-semibold">Klanten</h2>
 
-    <div class="flex flex-wrap items-center gap-2 justify-end">
-      <input id="clientSearch" type="text" placeholder="Zoek..." 
-        class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700" />
+      <div class="flex flex-wrap items-center gap-2 justify-end">
+        <input id="clientSearch" type="text" placeholder="Zoek..."
+          class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700" />
 
-      <select id="filterType" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
-        <option value="">Type Klant</option>
-        ${["Particulier", "Zakelijk"].map(t => `<option value="${t}">${t}</option>`).join("")}
-      </select>
+        <select id="filterType" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
+          <option value="">Type Klant</option>
+          ${["Particulier", "Zakelijk"].map(t => `<option value="${t}">${t}</option>`).join("")}
+        </select>
 
-      <select id="filterTag" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
-        <option value="">Tag</option>
-        ${(settings.tags || []).map(t => `<option value="${t}">${t}</option>`).join("")}
-      </select>
+        <select id="filterTag" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
+          <option value="">Tag</option>
+          ${(settings.tags || []).map(t => `<option value="${t}">${t}</option>`).join("")}
+        </select>
 
-      <select id="filterStatus" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
-        <option value="">Status</option>
-        ${["Active", "Inactive"].map(t => `<option value="${t}">${t}</option>`).join("")}
-      </select>
+        <select id="filterStatus" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
+          <option value="">Status</option>
+          ${["Active", "Inactive"].map(t => `<option value="${t}">${t}</option>`).join("")}
+        </select>
 
-      <select id="filterMethod" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
-        <option value="">Verzendmethode</option>
-        ${["Email", "Whatsapp"].map(t => `<option value="${t}">${t}</option>`).join("")}
-      </select>
+        <select id="filterMethod" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
+          <option value="">Verzendmethode</option>
+          ${["Email", "Whatsapp"].map(t => `<option value="${t}">${t}</option>`).join("")}
+        </select>
+
+        <button id="importClientsBtn" class="bg-green-600 text-white px-3 py-2 rounded hover:bg-green-700">📥 Import</button>
+        <button id="exportClientsBtn" class="bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700">📤 Export</button>
+        <button id="newClientBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuw Klant</button>
+      </div>
     </div>
-  </div>
 
-  <div class="overflow-y-auto max-h-[70vh] relative" id="clientsTable"></div>
-`;
+    <div class="overflow-y-auto max-h-[70vh] relative" id="clientsTable"></div>
+  `;
+
 
 
 
@@ -452,46 +458,45 @@ async function renderContracts() {
     contracts = await res.json();
 
     // 🔹 Filters + zoekveld boven tabel
-    list.innerHTML = `
-      <div class="flex flex-wrap justify-between mb-3 items-center">
-        <h2 class="text-xl font-semibold">Contracten</h2>
+  list.innerHTML = `
+  <div class="flex flex-wrap justify-between items-center mb-3 gap-2">
+    <h2 class="text-xl font-semibold">Contracten</h2>
 
-        <div class="flex flex-wrap items-center gap-2 justify-end">
-          <!-- 🔍 Zoek -->
-          <input id="contractSearch" type="text" placeholder="Zoek..."
-            class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700" />
+    <div class="flex flex-wrap items-center gap-2 justify-end">
+      <input id="contractSearch" type="text" placeholder="Zoek..."
+        class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700" />
 
-          <!-- 🔁 Frequentie filter -->
-          <select id="filterFrequency" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
-            <option value="">Frequentie</option>
-            ${(settings.frequencies || []).map(f => `<option value="${f}">${f}</option>`).join("")}
-          </select>
+      <select id="filterFrequency" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
+        <option value="">Frequentie</option>
+        ${(settings.frequencies || []).map(f => `<option value="${f}">${f}</option>`).join("")}
+      </select>
 
-          <!-- ✅ Type Service multiselect -->
-          <div class="relative">
-            <button id="filterTypeServiceBtn"
-              class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700 min-w-[140px] flex items-center justify-between">
-              <span id="filterTypeServiceLabel">Type Service</span>
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 ml-1 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            <div id="filterTypeServiceMenu"
-              class="absolute right-0 mt-1 bg-white dark:bg-gray-800 border dark:border-gray-700 rounded shadow-md z-50 hidden max-h-48 overflow-y-auto w-48">
-              ${(settings.typeServices || [])
-                .map(s => `
-                  <label class="flex items-center px-2 py-1 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
-                    <input type="checkbox" value="${s}" class="mr-2 typeServiceChk"> ${s}
-                  </label>
-                `).join("")}
-            </div>
-          </div>
+      <div class="relative">
+        <button id="filterTypeServiceBtn"
+          class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700 min-w-[140px] flex items-center justify-between">
+          <span id="filterTypeServiceLabel">Type Service</span>
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 ml-1 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+        <div id="filterTypeServiceMenu"
+          class="absolute right-0 mt-1 bg-white dark:bg-gray-800 border dark:border-gray-700 rounded shadow-md z-50 hidden max-h-48 overflow-y-auto w-48">
+          ${(settings.typeServices || [])
+            .map(s => `
+              <label class="flex items-center px-2 py-1 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
+                <input type="checkbox" value="${s}" class="mr-2 typeServiceChk"> ${s}
+              </label>
+            `).join("")}
         </div>
       </div>
 
-      <!-- ✅ Scrollbare tabel -->
-      <div class="overflow-y-auto max-h-[70vh] relative" id="contractsTable"></div>
-    `;
+      <button id="newContractBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuw Contract</button>
+    </div>
+  </div>
+
+  <div class="overflow-y-auto max-h-[70vh] relative" id="contractsTable"></div>
+`;
+
 
     const tableContainer = document.getElementById("contractsTable");
 
