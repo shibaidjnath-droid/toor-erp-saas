@@ -465,36 +465,71 @@ async function renderContracts() {
             ${(settings.frequencies || []).map(f => `<option value="${f}">${f}</option>`).join("")}
           </select>
 
-          <select id="filterTypeService" multiple size="1"
-            class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700 min-w-[140px]">
-            ${(settings.typeServices || []).map(s => `<option value="${s}">${s}</option>`).join("")}
-          </select>
+          <div class="relative">
+          <button id="filterTypeServiceBtn"
+          class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700 min-w-[140px] flex items-center justify-between">
+          <span id="filterTypeServiceLabel">Type Service</span>
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 ml-1 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+          </button>
+          <div id="filterTypeServiceMenu"
+          class="absolute right-0 mt-1 bg-white dark:bg-gray-800 border dark:border-gray-700 rounded shadow-md z-50 hidden max-h-48 overflow-y-auto w-48">
+          ${(settings.typeServices || [])
+          .map(s => `
+          <label class="flex items-center px-2 py-1 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
+          <input type="checkbox" value="${s}" class="mr-2 typeServiceChk"> ${s}
+          </label>
+        `).join("")}
         </div>
       </div>
 
       <div class="overflow-y-auto max-h-[70vh] relative" id="contractsTable"></div>
     `;
+    // ▼ Dropdown open/dicht
+const btn = document.getElementById("filterTypeServiceBtn");
+const menu = document.getElementById("filterTypeServiceMenu");
+btn.onclick = (e) => {
+  e.stopPropagation();
+  menu.classList.toggle("hidden");
+};
+document.addEventListener("click", () => menu.classList.add("hidden"));
+
+// ▼ Filter logica updaten bij vinkje
+menu.querySelectorAll(".typeServiceChk").forEach(chk =>
+  chk.addEventListener("change", () => {
+    const selected = Array.from(menu.querySelectorAll(".typeServiceChk:checked")).map(c => c.value.toLowerCase());
+    const label = document.getElementById("filterTypeServiceLabel");
+    label.textContent = selected.length ? `${selected.length} geselecteerd` : "Type Service";
+    renderFiltered(selected);
+  })
+);
+
 
     const tableContainer = document.getElementById("contractsTable");
 
     // 🔍 Filterfunctie
-    function renderFiltered() {
-      const fSearch = document.getElementById("contractSearch").value.toLowerCase();
-      const fFreq = document.getElementById("filterFrequency").value.toLowerCase();
-      const fTypeServices = Array.from(document.getElementById("filterTypeService").selectedOptions).map(o => o.value.toLowerCase());
+ function renderFiltered(selectedTypes = []) {
+  const fSearch = document.getElementById("contractSearch").value.toLowerCase();
+  const fFreq = document.getElementById("filterFrequency").value.toLowerCase();
+  const fTypeServices = selectedTypes.length
+    ? selectedTypes
+    : Array.from(document.querySelectorAll(".typeServiceChk:checked")).map(o => o.value.toLowerCase());
 
-      const filtered = contracts.filter(c => {
-        const services = Array.isArray(c.type_service)
-          ? c.type_service.map(s => s.toLowerCase())
-          : [(c.type_service || "").toLowerCase()];
-        const matchesSearch = !fSearch || Object.values(c).join(" ").toLowerCase().includes(fSearch);
-        const matchesFreq = !fFreq || (c.frequency || "").toLowerCase() === fFreq;
-        const matchesType =
-          !fTypeServices.length ||
-          fTypeServices.every(sel => services.includes(sel));
+  const filtered = contracts.filter(c => {
+    const services = Array.isArray(c.type_service)
+      ? c.type_service.map(s => s.toLowerCase())
+      : [(c.type_service || "").toLowerCase()];
 
-        return matchesSearch && matchesFreq && matchesType;
-      });
+    const matchesType =
+      !fTypeServices.length ||
+      fTypeServices.some(sel => services.includes(sel));
+
+    const matchesFreq = !fFreq || (c.frequency || "").toLowerCase() === fFreq;
+    const matchesSearch = !fSearch || Object.values(c).join(" ").toLowerCase().includes(fSearch);
+
+    return matchesSearch && matchesFreq && matchesType;
+  });
 
       // 🔹 Tabel renderen
       const rows = filtered.map(c => [
