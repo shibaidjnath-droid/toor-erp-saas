@@ -231,15 +231,12 @@ list.innerHTML = `
         <option value="">Verzendmethode</option>
         ${["Email", "Whatsapp"].map(t => `<option value="${t}">${t}</option>`).join("")}
       </select>
-
-      <button id="importClientsBtn" class="bg-green-600 text-white px-3 py-2 rounded hover:bg-green-700">📥 Import</button>
-      <button id="exportClientsBtn" class="bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700">📤 Export</button>
-      <button id="newClientBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuw Klant</button>
     </div>
   </div>
 
   <div class="overflow-y-auto max-h-[70vh] relative" id="clientsTable"></div>
 `;
+
 
 
   const tableContainer = document.getElementById("clientsTable");
@@ -254,7 +251,8 @@ list.innerHTML = `
 
     const filtered = clients.filter(c => {
       const matchesType = !fType || (c.type_klant || "").toLowerCase() === fType;
-      const matchesTag = !fTag || (c.tag || "").toLowerCase().includes(fTag);
+      let tagValue = Array.isArray(c.tag) ? c.tag.join(", ") : (c.tag || "");
+      const matchesTag = !fTag || tagValue.toLowerCase().includes(fTag);
       const matchesStatus = !fStatus || (c.status || "").toLowerCase() === fStatus;
       const matchesMethod = !fMethod || (c.verzend_methode || "").toLowerCase() === fMethod;
       const matchesSearch =
