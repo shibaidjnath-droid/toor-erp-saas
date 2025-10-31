@@ -206,7 +206,7 @@ async function renderClients() {
  // 🔹 Zoek + filters + knoppen rechts (zoals Planning)
 // 🔹 Eén regel header met alles erin
   list.innerHTML = `
-  <div class="flex flex-wrap justify-between items-center mb-3 gap-2">
+  <div class="flex flex-wrap justify-between items-center mb-2 gap-2">
     <h2 class="text-xl font-semibold">Klanten</h2>
 
     <div class="flex flex-wrap items-center gap-2 justify-end">
@@ -461,7 +461,7 @@ async function renderContracts() {
 
     // 🔹 Filters + zoekveld boven tabel
  list.innerHTML = `
-  <div class="flex flex-wrap justify-between items-center mb-3 gap-2">
+  <div class="flex flex-wrap justify-between items-center mb-2 gap-2">
     <h2 class="text-xl font-semibold">Contracten</h2>
 
     <div class="flex flex-wrap items-center gap-2 justify-end">
@@ -1133,7 +1133,7 @@ async function renderPlanning() {
   planning = (await res.json()).items || [];
 
   const controlsHTML = `
-  <div class="flex justify-between mb-4 flex-wrap gap-2">
+  <div class="flex justify-between mb-2 flex-wrap gap-2">
     <h2 class="text-xl font-semibold">Planning</h2>
     <div class="flex flex-wrap gap-2">
       <select id="planningFilter"
