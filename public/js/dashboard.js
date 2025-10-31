@@ -193,7 +193,7 @@ function openFromSearch(tab, id) {
 async function renderClients() {
   const list = document.getElementById("clientsList");
 
-  // ✅ Klanten laden als ze nog niet bestaan
+  // ✅ Klanten ophalen als niet aanwezig
   if (!Array.isArray(clients) || !clients.length) {
     const res = await fetch("/api/clients");
     if (!res.ok) {
@@ -203,56 +203,39 @@ async function renderClients() {
     clients = await res.json();
   }
 
-  // 🔹 Unieke waarden voor filters
-  const unique = arr => [...new Set(arr.filter(Boolean))];
-  const types = unique(clients.map(c => c.type_klant));
-  const tags = unique(clients.map(c => c.tag));
-  const statuses = unique(clients.map(c => c.status));
-  const methods = unique(clients.map(c => c.verzend_methode));
-
-  // 🔹 Header met zoekveld & filters links, knoppen rechts
+  // 🔹 Zoek + filters boven de tabel (geen knoppen!)
   list.innerHTML = `
-    <div class="flex flex-wrap justify-between mb-3 items-center gap-2">
-      <!-- 🔍 Filters & zoek -->
-      <div class="flex flex-wrap items-center gap-2">
-        <input id="clientSearch" type="text" placeholder="Zoek..." 
-          class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700" />
+    <div class="flex flex-wrap items-center gap-2 mb-3">
+      <input id="clientSearch" type="text" placeholder="Zoek..." 
+        class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700" />
 
-        <select id="filterType" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
-          <option value="">Type Klant</option>
-          ${types.map(t => `<option value="${t}">${t}</option>`).join("")}
-        </select>
+      <select id="filterType" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
+        <option value="">Type Klant</option>
+        ${["Particulier", "Zakelijk"].map(t => `<option value="${t}">${t}</option>`).join("")}
+      </select>
 
-        <select id="filterTag" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
-          <option value="">Tag</option>
-          ${tags.map(t => `<option value="${t}">${t}</option>`).join("")}
-        </select>
+      <select id="filterTag" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
+        <option value="">Tag</option>
+        ${(settings.tags || []).map(t => `<option value="${t}">${t}</option>`).join("")}
+      </select>
 
-        <select id="filterStatus" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
-          <option value="">Status</option>
-          ${statuses.map(t => `<option value="${t}">${t}</option>`).join("")}
-        </select>
+      <select id="filterStatus" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
+        <option value="">Status</option>
+        ${["Active", "Inactive"].map(t => `<option value="${t}">${t}</option>`).join("")}
+      </select>
 
-        <select id="filterMethod" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
-          <option value="">Verzendmethode</option>
-          ${methods.map(t => `<option value="${t}">${t}</option>`).join("")}
-        </select>
-      </div>
-
-      <!-- 📥 Actieknoppen -->
-      <div class="flex items-center gap-2">
-        <button id="importClientsBtn" class="bg-green-600 text-white px-3 py-2 rounded hover:bg-green-700">📥 Import</button>
-        <button id="exportClientsBtn" class="bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700">📤 Export</button>
-        <button id="newClientBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuw Klant</button>
-      </div>
+      <select id="filterMethod" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
+        <option value="">Verzendmethode</option>
+        ${["Email", "Whatsapp"].map(t => `<option value="${t}">${t}</option>`).join("")}
+      </select>
     </div>
 
-    <div id="clientsTable" class="overflow-y-auto max-h-[70vh] relative"></div>
+    <div class="overflow-y-auto max-h-[70vh] relative" id="clientsTable"></div>
   `;
 
   const tableContainer = document.getElementById("clientsTable");
 
-  // 🔹 Filterfunctie
+  // 🔎 Filterfunctie
   function renderFiltered() {
     const fType = document.getElementById("filterType").value.toLowerCase();
     const fTag = document.getElementById("filterTag").value.toLowerCase();
@@ -268,7 +251,6 @@ async function renderClients() {
       const matchesSearch =
         !search ||
         Object.values(c).join(" ").toLowerCase().includes(search);
-
       return matchesType && matchesTag && matchesStatus && matchesMethod && matchesSearch;
     });
 
@@ -283,7 +265,7 @@ async function renderClients() {
     ]);
 
     tableContainer.innerHTML = tableHTML(
-      ["Naam", "E-mail", "Telefoon", "Type Klant", "Verzendmethode", "Tag", "Status"],
+      ["Naam", "E-mail", "Telefoon", "Type klant", "Verzendmethode", "Tag", "Status"],
       rows
     );
 
@@ -292,13 +274,20 @@ async function renderClients() {
     );
   }
 
-  // 🔄 Eventlisteners voor filters & zoekveld
+  // 🔄 Events
   ["filterType", "filterTag", "filterStatus", "filterMethod", "clientSearch"].forEach(id =>
     document.getElementById(id).addEventListener("input", renderFiltered)
   );
 
-  // ✅ Eerste render
   renderFiltered();
+
+  // ✅ Knoppen blijven zoals in HTML: handlers koppelen
+  document.getElementById("newClientBtn").onclick = () => openNewClientModal();
+  document.getElementById("importClientsBtn").onclick = () => importClients();
+  document.getElementById("exportClientsBtn").onclick = () => exportClients();
+}
+
+
 
   // ✅ Nieuw klant toevoegen
   document.getElementById("newClientBtn").onclick = () => {
@@ -413,7 +402,7 @@ async function renderClients() {
     window.URL.revokeObjectURL(url);
     showToast("Export succesvol gedownload", "success");
   };
-}
+
 
 
 function openClientDetail(c) {
@@ -456,7 +445,6 @@ function openClientDetail(c) {
   }));
 }
 
-
 // 📄 Contracten
 async function renderContracts() {
   const list = document.getElementById("contractsList");
@@ -483,7 +471,7 @@ async function renderContracts() {
     list.innerHTML = `
       <div class="overflow-y-auto max-h-[70vh] relative">
         ${tableHTML(
-          ["Klant", "Type service", "Frequentie", "Beschrijving", "Prijs incl.", "BTW %", "Laatste bezoek", "Volgende bezoek"],
+          ["Klant", "Type service", "Frequentie", "Beschrijving", "Prijs incl.", "BTW", "Laatste bezoek", "Volgende bezoek"],
           rows
         )}
       </div>
@@ -537,6 +525,7 @@ async function renderContracts() {
     showToast("Fout bij laden contractenlijst", "error");
   }
 }
+
 
 
 function openContractDetail(c) {
