@@ -206,41 +206,43 @@ async function renderClients() {
  // 🔹 Zoek + filters + knoppen rechts (zoals Planning)
 // 🔹 Eén regel header met alles erin
   list.innerHTML = `
-    <div class="flex flex-wrap justify-between items-center mb-3 gap-2">
-      <h2 class="text-xl font-semibold">Klanten</h2>
+  <div class="flex flex-wrap justify-between items-center mb-3 gap-2">
+    <h2 class="text-xl font-semibold">Klanten</h2>
 
-      <div class="flex flex-wrap items-center gap-2 justify-end">
-        <input id="clientSearch" type="text" placeholder="Zoek..."
-          class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700" />
+    <div class="flex flex-wrap items-center gap-2 justify-end">
+      <input id="clientSearch" type="text" placeholder="Zoek..."
+        class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700" />
 
-        <select id="filterType" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
-          <option value="">Type Klant</option>
-          ${["Particulier", "Zakelijk"].map(t => `<option value="${t}">${t}</option>`).join("")}
-        </select>
+      <select id="filterType" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
+        <option value="">Type Klant</option>
+        ${["Particulier", "Zakelijk"].map(t => `<option value="${t}">${t}</option>`).join("")}
+      </select>
 
-        <select id="filterTag" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
-          <option value="">Tag</option>
-          ${(settings.tags || []).map(t => `<option value="${t}">${t}</option>`).join("")}
-        </select>
+      <select id="filterTag" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
+        <option value="">Tag</option>
+        ${(settings.tags || []).map(t => `<option value="${t}">${t}</option>`).join("")}
+      </select>
 
-        <select id="filterStatus" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
-          <option value="">Status</option>
-          ${["Active", "Inactive"].map(t => `<option value="${t}">${t}</option>`).join("")}
-        </select>
+      <select id="filterStatus" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
+        <option value="">Status</option>
+        ${["Active", "Inactive"].map(t => `<option value="${t}">${t}</option>`).join("")}
+      </select>
 
-        <select id="filterMethod" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
-          <option value="">Verzendmethode</option>
-          ${["Email", "Whatsapp"].map(t => `<option value="${t}">${t}</option>`).join("")}
-        </select>
+      <select id="filterMethod" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
+        <option value="">Verzendmethode</option>
+        ${["Email", "Whatsapp"].map(t => `<option value="${t}">${t}</option>`).join("")}
+      </select>
 
-        <button id="importClientsBtn" class="bg-green-600 text-white px-3 py-2 rounded hover:bg-green-700">📥 Import</button>
-        <button id="exportClientsBtn" class="bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700">📤 Export</button>
-        <button id="newClientBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuw Klant</button>
-      </div>
+      <!-- ✅ Hier plaatsen we de bestaande functionele knoppen -->
+      <button id="importClientsBtn" class="bg-green-600 text-white px-3 py-2 rounded hover:bg-green-700">📥 Import</button>
+      <button id="exportClientsBtn" class="bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700">📤 Export</button>
+      <button id="newClientBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuw Klant</button>
     </div>
+  </div>
 
-    <div class="overflow-y-auto max-h-[70vh] relative" id="clientsTable"></div>
-  `;
+  <div class="overflow-y-auto max-h-[70vh] relative" id="clientsTable"></div>
+`;
+
 
 
 
@@ -458,7 +460,7 @@ async function renderContracts() {
     contracts = await res.json();
 
     // 🔹 Filters + zoekveld boven tabel
-  list.innerHTML = `
+ list.innerHTML = `
   <div class="flex flex-wrap justify-between items-center mb-3 gap-2">
     <h2 class="text-xl font-semibold">Contracten</h2>
 
@@ -490,6 +492,7 @@ async function renderContracts() {
         </div>
       </div>
 
+      <!-- ✅ Bestaande knop -->
       <button id="newContractBtn" class="bg-primary text-white px-4 py-2 rounded hover:bg-blue-700">+ Nieuw Contract</button>
     </div>
   </div>
