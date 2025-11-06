@@ -2,6 +2,7 @@
 import express from "express";
 import { v4 as uuidv4 } from "uuid";
 import { pool } from "../db.js";
+//import { rebuildSeriesForContract } from "./planningHelpers.js";
 
 const router = express.Router();
 
@@ -34,7 +35,6 @@ export function computeNextVisit(lastVisit, frequency) {
    ───────────────────────────────────────────────────────────── */
 
 async function hasConflict(date, memberId, contractId) {
-  // Conflicten tellen als: zelfde dag én (zelfde member of zelfde contract), niet geannuleerd
   const { rows } = await pool.query(
     `SELECT 1 FROM planning
      WHERE date::date = $1::date
@@ -158,7 +158,9 @@ router.get("/", async (_req, res) => {
         ct.name AS client_name,
         ct.address AS address,
         ct.house_number AS house_number,
-        ct.city AS city
+        ct.city AS city,
+        c.contract_eind_datum,
+        c.maandelijkse_facturatie
       FROM contracts c
       LEFT JOIN contacts ct ON c.contact_id = ct.id
       ORDER BY ct.name ASC
@@ -183,7 +185,7 @@ router.get("/", async (_req, res) => {
 router.get("/:id", async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT c.*, ct.name AS client_name
+      `SELECT c.*, ct.name AS client_name, c.contract_eind_datum, c.maandelijkse_facturatie
        FROM contracts c
        LEFT JOIN contacts ct ON c.contact_id = ct.id
        WHERE c.id = $1`,
@@ -207,120 +209,134 @@ router.get("/:id", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     const {
-      clientId, frequency, description, paymentNotes,
-      priceEx, vatPct, groteBeurt, typeService = [],
-      lastVisit
+      clientId, typeService, frequency, description,
+      priceEx, vatPct, lastVisit,
+      maandelijkse_facturatie, invoice_day // ✅ nieuwe velden
     } = req.body;
 
-    if (!clientId)
-      return res.status(400).json({ error: "clientId is verplicht" });
+    const ex = parseFloat(priceEx) || 0;
+    const vat = parseFloat(vatPct) || 0;
+    const priceInc = Math.round(ex * (1 + vat / 100) * 100) / 100;
+    const nextVisit = computeNextVisit(lastVisit, frequency);
+    const safeInvoiceDay = invoice_day === "" ? null : Number(invoice_day) || null;
 
-    const clientCheck = await pool.query("SELECT id FROM contacts WHERE id=$1", [clientId]);
-    if (!clientCheck.rows.length)
-      return res.status(404).json({ error: "Client niet gevonden" });
 
-    const freq = allowedFreq.includes(frequency) ? frequency : "Maand";
-    const ex = isNaN(parseFloat(priceEx)) ? 0 : parseFloat(priceEx);
-    const vat = isNaN(parseFloat(vatPct)) ? 21 : parseFloat(vatPct);
-    const inc = +(ex * (1 + vat / 100)).toFixed(2);
-    const nextVisit = computeNextVisit(lastVisit, freq);
     const id = uuidv4();
-
     const { rows } = await pool.query(
       `INSERT INTO contracts (
-        id, contact_id, frequency, description, payment_notes,
-        price_ex, price_inc, vat_pct, grote_beurt, type_service,
-        last_visit, next_visit, active, created_at
-      )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true,now())
-      RETURNING *`,
+         id, contact_id, type_service, frequency, description,
+         price_ex, vat_pct, price_inc, last_visit, next_visit,
+         maandelijkse_facturatie, invoice_day
+       )
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       RETURNING *`,
       [
-        id, clientId, freq, description || "", paymentNotes || "",
-        ex, inc, vat, !!groteBeurt, JSON.stringify(typeService),
-        lastVisit || null, nextVisit
+        id, clientId, JSON.stringify(typeService), frequency, description,
+        ex, vat, priceInc, lastVisit, nextVisit,
+        maandelijkse_facturatie, safeInvoiceDay
       ]
     );
 
     const contract = rows[0];
 
-    // 🔁 Slimme initiële 12m reeks
-    try {
-      await rebuildSeriesForContract(contract, { logPrefix: "POST /contracts – " });
-    } catch (err) {
-      console.warn("❌ Slimme planning niet gelukt (POST):", err.message);
-    }
-
-    // (Compat) enkele eerste planning (alleen als nog niet bestaat)
-    if (contract.next_visit) {
-      try {
-        const existing = await pool.query(
-          "SELECT id FROM planning WHERE contract_id=$1 AND date::date=$2::date",
-          [contract.id, contract.next_visit]
-        );
-        if (!existing.rowCount) {
-          await pool.query(
-            `INSERT INTO planning (id, contract_id, date, status, created_at)
-             VALUES ($1,$2,$3,'Gepland',now())`,
-            [uuidv4(), contract.id, contract.next_visit]
-          );
-          console.log(`✅ Enkel planningrecord aangemaakt (compat) voor contract ${contract.id}`);
-        }
-      } catch (err) {
-        console.error("❌ Fout bij automatisch planningrecord (POST):", err.message);
-      }
-    }
-
-    if (typeof contract.type_service === "string")
-      contract.type_service = JSON.parse(contract.type_service);
-
+    // ✅ Stuur de response direct terug naar de client
     res.status(201).json(contract);
+
+    // ✅ Voer hierna alle “achtergrondacties” asynchroon uit
+    //    (de client heeft al zijn antwoord)
+    process.nextTick(async () => {
+      try {
+        // 🔁 Slimme initiële 12m reeks
+        await rebuildSeriesForContract(contract, { logPrefix: "POST /contracts – " });
+      } catch (err) {
+        console.warn("❌ Slimme planning niet gelukt (POST):", err.message);
+      }
+
+      // (Compat) enkele eerste planning (alleen als nog niet bestaat)
+      if (contract.next_visit) {
+        try {
+          const existing = await pool.query(
+            "SELECT id FROM planning WHERE contract_id=$1 AND date::date=$2::date",
+            [contract.id, contract.next_visit]
+          );
+          if (!existing.rowCount) {
+            await pool.query(
+              `INSERT INTO planning (id, contract_id, date, status, created_at)
+               VALUES ($1,$2,$3,'Gepland',now())`,
+              [uuidv4(), contract.id, contract.next_visit]
+            );
+            console.log(`✅ Enkel planningrecord aangemaakt (compat) voor contract ${contract.id}`);
+          }
+        } catch (err) {
+          console.error("❌ Fout bij automatisch planningrecord (POST):", err.message);
+        }
+      }
+
+      // ✅ JSON-parsen van type_service (alleen voor logging/consistentie)
+      try {
+        if (typeof contract.type_service === "string") {
+          contract.type_service = JSON.parse(contract.type_service);
+        }
+      } catch {
+        /* ignore JSON errors */
+      }
+    });
   } catch (err) {
     console.error("❌ DB insert error:", err.message);
-    res.status(500).json({ error: "Database insert error" });
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Database insert error" });
+    }
   }
 });
+
 
 /** ✅ PUT – update contract (+ veilige herbouw van toekomstige reeks) */
 router.put("/:id", async (req, res) => {
   try {
     const {
-      frequency, description, paymentNotes,
-      priceEx, vatPct, groteBeurt, typeService,
-      lastVisit, active
-    } = req.body;
+  frequency, description, paymentNotes,
+  priceEx, vatPct, groteBeurt, typeService,
+  lastVisit, active,
+  maandelijkse_facturatie, invoice_day    // ✅ nieuw veld toegevoegd
+} = req.body;
 
-    const freq = allowedFreq.includes(frequency) ? frequency : undefined;
-    const ex = priceEx !== undefined ? parseFloat(priceEx) : undefined;
-    const vat = vatPct !== undefined ? parseFloat(vatPct) : undefined;
-    const nextVisit =
-      (lastVisit || freq)
-        ? computeNextVisit(lastVisit, freq || "Maand")
-        : undefined;
+const safeInvoiceDay = invoice_day === "" ? null : Number(invoice_day) || null;
+const freq = allowedFreq.includes(frequency) ? frequency : undefined;
+const ex = priceEx !== undefined ? parseFloat(priceEx) : undefined;
+const vat = vatPct !== undefined ? parseFloat(vatPct) : undefined;
+const nextVisit =
+  (lastVisit || freq)
+    ? computeNextVisit(lastVisit, freq || "Maand")
+    : undefined;
 
-    // 1) Update contract
-    const { rows } = await pool.query(
-      `UPDATE contracts
-       SET frequency = COALESCE($1, frequency),
-           description = COALESCE($2, description),
-           payment_notes = COALESCE($3, payment_notes),
-           price_ex = COALESCE($4, price_ex),
-           vat_pct = COALESCE($5, vat_pct),
-           price_inc = CASE
-             WHEN $4 IS NOT NULL AND $5 IS NOT NULL THEN ROUND($4 * (1 + $5/100), 2)
-             ELSE price_inc
-           END,
-           grote_beurt = COALESCE($6, grote_beurt),
-           type_service = COALESCE($7, type_service),
-           last_visit = COALESCE($8, last_visit),
-           next_visit = COALESCE($9, next_visit),
-           active = COALESCE($10, active)
-       WHERE id = $11
-       RETURNING *`,
-      [
-        freq, description, paymentNotes, ex, vat, groteBeurt,
-        JSON.stringify(typeService), lastVisit, nextVisit, active, req.params.id
-      ]
-    );
+// contract_eind_datum blijft read-only
+const { rows } = await pool.query(
+  `UPDATE contracts
+     SET frequency = COALESCE($1, frequency),
+         description = COALESCE($2, description),
+         payment_notes = COALESCE($3, payment_notes),
+         price_ex = COALESCE($4, price_ex),
+         vat_pct = COALESCE($5, vat_pct),
+         price_inc = CASE
+           WHEN $4 IS NOT NULL AND $5 IS NOT NULL THEN ROUND($4 * (1 + $5/100), 2)
+           ELSE price_inc
+         END,
+         grote_beurt = COALESCE($6, grote_beurt),
+         type_service = COALESCE($7, type_service),
+         last_visit = COALESCE($8, last_visit),
+         next_visit = COALESCE($9, next_visit),
+         maandelijkse_facturatie = COALESCE($10, maandelijkse_facturatie),
+         invoice_day = COALESCE($11, invoice_day),      -- ✅ nieuw veld
+         active = COALESCE($12, active)
+   WHERE id = $13
+   RETURNING *`,
+  [
+    freq, description, paymentNotes, ex, vat, groteBeurt,
+    JSON.stringify(typeService), lastVisit, nextVisit,
+    maandelijkse_facturatie, safeInvoiceDay, active, req.params.id
+  ]
+);
+
 
     if (!rows.length)
       return res.status(404).json({ error: "Contract niet gevonden" });

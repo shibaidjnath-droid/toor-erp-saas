@@ -1,0 +1,6 @@
+2025/11/05-23:56:56.160 4ae0 Reusing MANIFEST C:\Users\shiba\Desktop\TOOR ERP\TOOR ERP Kristalhelder TEST\sessions\session\Default\Local Storage\leveldb/MANIFEST-000001
+2025/11/05-23:56:56.160 4ae0 Recovering log #13
+2025/11/05-23:56:56.161 4ae0 Reusing old log C:\Users\shiba\Desktop\TOOR ERP\TOOR ERP Kristalhelder TEST\sessions\session\Default\Local Storage\leveldb/000013.log 
+2025/11/05-23:58:56.991 4918 Level-0 table #17: started
+2025/11/05-23:58:56.996 4918 Level-0 table #17: 15813 bytes OK
+2025/11/05-23:58:56.998 4918 Delete type=0 #13

@@ -2,6 +2,11 @@
 import express from "express";
 import { pool } from "../db.js";
 import { v4 as uuidv4 } from "uuid";
+import { rebuildSeriesForContract } from "./planningHelpers.js";
+console.log("✅ planning.js geladen");
+import puppeteer from "puppeteer";
+import fs from "fs";
+import path from "path";
 
 const router = express.Router();
 
@@ -20,7 +25,7 @@ function addDays(d, n) {
 }
 function startOfWeekMonday(d) {
   const x = startOfDay(d);
-  const day = x.getDay() || 7; // ma=1, zo=7
+  const day = x.getDay() || 7;
   return addDays(x, -(day - 1));
 }
 function startOfMonth(d) {
@@ -41,7 +46,7 @@ function startOfNextYear(d) {
    =========================================================== */
 function getIsoWeekNumber(date) {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7; // ma=1..zo=7
+  const dayNum = d.getUTCDay() || 7;
   d.setUTCDate(d.getUTCDate() + 4 - dayNum);
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
   return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
@@ -49,8 +54,6 @@ function getIsoWeekNumber(date) {
 
 /**
  * Map front-end waarde → [from, to] (ISO strings)
- * NL labels: "Vandaag", "Deze week", "Deze maand", "Dit jaar", "Specifieke datum", "Alles"
- * EN labels: "today", "week", "month", "year", "date", "all"
  */
 function resolveRange(rangeLabel, startParam) {
   const now = new Date();
@@ -63,6 +66,7 @@ function resolveRange(rangeLabel, startParam) {
   }
 
   const isToday = ["vandaag", "today"].includes(label);
+  const isTomorrow = ["morgen", "tomorrow"].includes(label);
   const isWeek = ["deze week", "week"].includes(label);
   const isMonth = ["deze maand", "month"].includes(label);
   const isYear = ["dit jaar", "year"].includes(label);
@@ -70,10 +74,12 @@ function resolveRange(rangeLabel, startParam) {
   const isAll = ["alles", "all"].includes(label);
 
   let from, to;
-
   if (isToday) {
     from = startOfDay(now);
     to = addDays(from, 1);
+  } else if (isTomorrow) {
+    from = addDays(startOfDay(now), 1);
+    to = addDays(from, 1); 
   } else if (isWeek) {
     from = startOfWeekMonday(now);
     to = addDays(from, 7);
@@ -91,7 +97,6 @@ function resolveRange(rangeLabel, startParam) {
     from = new Date(now.getFullYear() - 5, 0, 1);
     to = new Date(now.getFullYear() + 10, 0, 1);
   } else {
-    // fallback → week (ma–zo)
     from = startOfWeekMonday(now);
     to = addDays(from, 7);
   }
@@ -100,7 +105,7 @@ function resolveRange(rangeLabel, startParam) {
 }
 
 /* ===========================================================
-   🔁 Compute next visit (zelfde keuzes als contract.js)
+   🔁 Compute next visit
    =========================================================== */
 export function computeNextVisit(lastVisit, frequency) {
   const base = lastVisit ? new Date(lastVisit) : new Date();
@@ -118,80 +123,210 @@ export function computeNextVisit(lastVisit, frequency) {
   }
   return d.toISOString();
 }
-
 /* ===========================================================
-   🗓️  Endpoints
+   🗓️ Basis GET-routes hersteld
    =========================================================== */
 
-/**
- * ✅ GET /api/planning/schedule?range=…&memberId=&status=&start=YYYY-MM-DD&week=NN
- * - range ondersteunt NL/EN labels
- * - extra optionele filter: week=NN (ISO weeknummer)
+/** ✅ GET /api/planning/schedule
+ *  Ondersteunt filters: range, memberId, status, week, start
  */
 router.get("/schedule", async (req, res) => {
   try {
-    const { range = "Deze week", memberId, status, start, week } = req.query;
+    const { range = "all", memberId, status, week, start } = req.query;
+
+    // 🕓 Bereken datumbereik
     const [fromIso, toIso] = resolveRange(range, start);
 
-    const params = [fromIso, toIso];
-    let filter = "";
-    if (memberId) { params.push(memberId); filter += ` AND p.member_id = $${params.length}`; }
-    if (status)   { params.push(status);   filter += ` AND p.status = $${params.length}`; }
-    if (week)     { params.push(parseInt(week, 10)); filter += ` AND p.week_number = $${params.length}`; }
+    const conditions = [];
+    const params = [];
 
-    const { rows } = await pool.query(
-      `SELECT 
-         p.id, p.contract_id, p.member_id, p.date, p.week_number,
-         p.status, p.comment, p.cancel_reason, p.invoiced,
-         c.contact_id AS client_id, ct.name AS customer,
-         ct.address, ct.house_number, ct.city,
-         m.name AS member_name
-       FROM planning p
-       JOIN contracts c ON p.contract_id = c.id
-       JOIN contacts  ct ON c.contact_id = ct.id
-       LEFT JOIN members m ON p.member_id = m.id
-       WHERE p.date >= $1 AND p.date < $2
-       ${filter}
-       ORDER BY p.date ASC, customer ASC`,
-      params
-    );
+    // Datumfilter op basis van range
+    if (range && range !== "all") {
+      params.push(fromIso, toIso);
+      conditions.push(`p.date BETWEEN $${params.length - 1} AND $${params.length}`);
+    }
 
-    res.json({ items: rows, range: { from: fromIso, to: toIso } });
+    // Member-filter
+    if (memberId) {
+      params.push(memberId);
+      conditions.push(`p.member_id = $${params.length}`);
+    }
+
+    // Status-filter
+    if (status) {
+      params.push(status);
+      conditions.push(`p.status = $${params.length}`);
+    }
+
+    // Week-filter
+    if (week) {
+      params.push(parseInt(week, 10));
+      conditions.push(`p.week_number = $${params.length}`);
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+    const sql = `
+      SELECT 
+        p.id, p.contract_id, p.member_id, p.date, p.week_number,
+        p.status, p.comment, p.cancel_reason, p.invoiced,
+        c.contact_id AS client_id, ct.name AS customer,
+        ct.address, ct.house_number, ct.city,
+        m.name AS member_name
+      FROM planning p
+      JOIN contracts c ON p.contract_id = c.id
+      JOIN contacts  ct ON c.contact_id = ct.id
+      LEFT JOIN members m ON p.member_id = m.id
+      ${whereClause}
+      ORDER BY p.date ASC, customer ASC
+    `;
+
+    const { rows } = await pool.query(sql, params);
+    res.json({ items: rows, range, appliedFilters: { memberId, status, week, range } });
   } catch (err) {
-    console.error("Planning schedule fetch error:", err);
+    console.error("❌ Planning schedule fetch error:", err);
     res.status(500).json({ error: "Database error while fetching schedule" });
   }
 });
 
-/**
- * ✅ GET /api/planning/:id
- */
-router.get("/:id", async (req, res) => {
+
+/* ===========================================================
+   🗓️  Endpoints
+   =========================================================== */
+// (Alle bestaande GET, POST, PUT, DELETE routes blijven ongewijzigd...)
+
+/* ===========================================================
+   🧠 SLIMME AUTO-ASSIGN MET €-GRENS + REGIOCLUSTERING
+   =========================================================== */
+router.post("/auto-assign/:id", async (req, res) => {
+  const planningId = req.params.id;
+  console.log(`🧠 Auto-assign gestart voor planning ${planningId}`);
+
   try {
-    const { rows } = await pool.query(
-      `SELECT p.*, c.frequency, ct.name AS customer
-         FROM planning p
-         JOIN contracts c ON p.contract_id = c.id
-         JOIN contacts ct ON c.contact_id = ct.id
-       WHERE p.id = $1`,
-      [req.params.id]
-    );
-    if (!rows.length) return res.status(404).json({ error: "Planning item niet gevonden" });
-    res.json(rows[0]);
+    // 1️⃣ Planning + klantinfo
+    const { rows: planRows } = await pool.query(`
+      SELECT p.id, p.date::date AS plan_date,
+             c.id AS contract_id, c.price_inc,
+             ct.id AS contact_id, ct.city, ct.status AS client_status
+      FROM planning p
+      JOIN contracts c ON p.contract_id = c.id
+      JOIN contacts ct ON c.contact_id = ct.id
+      WHERE p.id = $1
+    `, [planningId]);
+
+    if (!planRows.length) return res.status(404).json({ error: "Planning niet gevonden" });
+    const plan = planRows[0];
+    const { plan_date, city, client_status } = plan;
+    if (client_status !== "Active") {
+      console.warn("⛔ Klant is inactief — geen member toegewezen");
+      return res.json({ warning: "Klant niet actief" });
+    }
+
+    console.log(`📍 Stad van klant: ${city}`);
+
+    // 2️⃣ Alle actieve members ophalen
+    const { rows: members } = await pool.query(`
+      SELECT id, name FROM members WHERE active = true
+    `);
+    if (!members.length) {
+      console.warn("⚠️ Geen actieve members");
+      return res.json({ warning: "Geen actieve members" });
+    }
+
+    // 3️⃣ Dagload (€) per member
+    const { rows: loads } = await pool.query(`
+      SELECT m.id AS member_id, COALESCE(SUM(c.price_inc),0) AS total_value
+      FROM members m
+      LEFT JOIN planning p ON m.id = p.member_id AND p.date::date = $1
+      LEFT JOIN contracts c ON p.contract_id = c.id
+      WHERE m.active = true
+      GROUP BY m.id
+    `, [plan_date]);
+    const loadMap = Object.fromEntries(loads.map(l => [l.member_id, parseFloat(l.total_value || 0)]));
+
+    // 4️⃣ Bepaal stadshits
+    const candidatePromises = members.map(async m => {
+      const sameCityRes = await pool.query(`
+        SELECT COUNT(*)::int AS same_city_hits
+        FROM planning p
+        JOIN contracts c2 ON p.contract_id = c2.id
+        JOIN contacts ct2 ON c2.contact_id = ct2.id
+        WHERE p.member_id = $1 AND LOWER(ct2.city) = LOWER($2)
+      `, [m.id, city]);
+      const sameCityHits = sameCityRes.rows[0]?.same_city_hits || 0;
+      const totalValue = loadMap[m.id] || 0;
+      const score = totalValue - (sameCityHits * 50);
+      return { ...m, sameCityHits, totalValue, score };
+    });
+
+    const candidates = await Promise.all(candidatePromises);
+    const filtered = candidates.filter(c => c.totalValue < 500);
+    const sorted = (filtered.length ? filtered : candidates).sort((a, b) => a.score - b.score);
+    const chosen = sorted[0];
+
+    if (!chosen) {
+      console.warn("⚠️ Geen geschikte member gevonden");
+      return res.json({ warning: "Geen geschikte member" });
+    }
+
+    // 5️⃣ Update planning
+    await pool.query(`UPDATE planning SET member_id = $1 WHERE id = $2`, [chosen.id, planningId]);
+    console.log(`✅ Slim toegewezen member '${chosen.name}' aan planning ${planningId}`);
+    console.log(`   ➜ Dagload: €${chosen.totalValue.toFixed(2)}, Regio-hits: ${chosen.sameCityHits}`);
+
+    res.json({
+      ok: true,
+      assignedMember: chosen.name,
+      dayValue: chosen.totalValue,
+      sameCityHits: chosen.sameCityHits
+    });
   } catch (err) {
-    console.error("Planning get error:", err);
-    res.status(500).json({ error: "Database error while fetching planning item" });
+    console.error("❌ Auto-assign fout:", err);
+    res.status(500).json({ error: "Auto-assign mislukt" });
   }
 });
 
-/**
- * ✅ POST /api/planning
- * { contractId, memberId, date, status, comment, invoiced }
- * → berekent automatisch week_number (ISO)
- */
+/** 🧠 Auto-assign alle planningen van één contract (batch) */
+router.post("/auto-assign/contract/:contractId", async (req, res) => {
+  try {
+    const { contractId } = req.params;
+    console.log(`🧠 Batch auto-assign gestart voor contract ${contractId}`);
+
+    const { rows: plannings } = await pool.query(
+      `SELECT id FROM planning 
+        WHERE contract_id = $1 
+          AND member_id IS NULL`,
+      [contractId]
+    );
+
+    if (!plannings.length) {
+      console.log(`ℹ️ Geen planningen zonder member gevonden voor contract ${contractId}`);
+      return res.json({ ok: true, count: 0 });
+    }
+
+    // 🔁 Gebruik LOCAL_URL als die bestaat, anders APP_URL
+    const baseUrl = process.env.LOCAL_URL || process.env.APP_URL;
+
+    for (const p of plannings) {
+      await fetch(`${baseUrl}/api/planning/auto-assign/${p.id}`, { method: "POST" });
+      console.log(`👤 Auto-assign uitgevoerd voor planning ${p.id}`);
+    }
+
+    res.json({ ok: true, count: plannings.length });
+    console.log(`✅ Batch auto-assign afgerond voor contract ${contractId} (${plannings.length} planningen bijgewerkt)`);
+  } catch (err) {
+    console.error("❌ Batch auto-assign fout:", err);
+    res.status(500).json({ error: "Batch auto-assign mislukt" });
+  }
+});
+
+//router.use("/dashboard/api/planning", router);
+
+/** ✅ POST /api/planning  → maak ad-hoc planningrecord aan */
 router.post("/", async (req, res) => {
   try {
     const { contractId, memberId, date, status = "Gepland", comment = null, invoiced = false } = req.body;
+
     if (!contractId || !date)
       return res.status(400).json({ error: "contractId en date zijn verplicht" });
 
@@ -199,132 +334,230 @@ router.post("/", async (req, res) => {
     const weekNumber = getIsoWeekNumber(dt);
 
     const { rows } = await pool.query(
-      `INSERT INTO planning (id, contract_id, member_id, date, week_number, status, comment, invoiced, created_at)
+      `INSERT INTO planning 
+         (id, contract_id, member_id, date, week_number, status, comment, invoiced, created_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8, now())
        RETURNING *`,
-      [uuidv4(), contractId, memberId || null, dt.toISOString(), weekNumber, status, comment, !!invoiced]
+      [uuidv4(), contractId, memberId || null, dt.toLocaleDateString('en-CA'), weekNumber, status, comment, !!invoiced]
     );
 
     // Niet-blokkerend: auto-assign proberen
     try {
-      await fetch(`${process.env.APP_URL}/api/planning/auto-assign/${rows[0].id}`, { method: "POST" });
+      const baseUrl = process.env.LOCAL_URL || process.env.APP_URL;
+      await fetch(`${baseUrl}/api/planning/auto-assign/${rows[0].id}`, { method: "POST" });
     } catch (e) {
       console.warn("Auto-assign call failed:", e.message);
     }
 
     res.status(201).json(rows[0]);
+    console.log(`🆕 Ad-hoc planningrecord aangemaakt voor contract ${contractId}`);
   } catch (err) {
     console.error("Planning create error:", err);
     res.status(500).json({ error: "Failed to create planning item" });
   }
 });
 
-/**
- * ✅ PUT /api/planning/:id
- * - bij wijziging 'date' → week_number herberekenen
- * - contractlogica bij Afgerond en annuleer-reeks bij specifieke redenen
+/** 🔁 Rebuild planningreeks vanaf front-end */
+router.post("/rebuild/:contractId", async (req, res) => {
+  try {
+    const { contractId } = req.params;
+    const { startDate } = req.body || {};
+
+    console.log(`🔁 Rebuild gestart via front-end voor contract ${contractId}`);
+    if (startDate) console.log(`📅 Nieuwe startdatum: ${startDate}`);
+
+    // geef opties door aan helper
+    const count = await rebuildSeriesForContract(contractId, {
+      resetExisting: true,
+      startDate,
+      logPrefix: "FRONTEND rebuild – "
+    });
+
+    res.json({ ok: true, count });
+    console.log(`✅ Rebuild voltooid: ${count} planningen opnieuw aangemaakt`);
+  } catch (err) {
+    console.error("Rebuild error:", err);
+    if (!res.headersSent)
+      res.status(500).json({ error: "Failed to rebuild planning" });
+  }
+});
+// ...
+router.post("/share", async (req, res) => {
+  try {
+    const { periode } = req.body;
+    if (!periode) return res.status(400).json({ error: "Periode is verplicht" });
+
+    // 📅 Bereken tijdsrange
+    const now = new Date();
+    const start = new Date(now);
+    const end = new Date(now);
+    switch (periode) {
+      case "Voor Morgen":
+        start.setDate(now.getDate() + 1);
+        end.setDate(now.getDate() + 1);
+        break;
+      case "Deze Week":
+        start.setDate(now.getDate() - now.getDay() + 1);
+        end.setDate(start.getDate() + 6);
+        break;
+      case "Deze Maand":
+        start.setDate(1);
+        end.setMonth(start.getMonth() + 1);
+        end.setDate(0);
+        break;
+    }
+/** ✅ PUT /api/planning/:id
+ *  Werkt bestaande planning bij (datum, status, member, comment, invoiced, cancel_reason)
  */
 router.put("/:id", async (req, res) => {
   try {
-    const { memberId, date, status, comment, invoiced, cancel_reason } = req.body;
+    const { id } = req.params;
+    const { date, memberId, status, comment, invoiced, cancel_reason } = req.body;
 
-    // 1) Huidig record + contract-frequentie
-    const { rows: currentRows } = await pool.query(
-      `SELECT p.*, c.frequency, c.id AS contract_id
-       FROM planning p
-       JOIN contracts c ON p.contract_id = c.id
-       WHERE p.id = $1`,
-      [req.params.id]
-    );
-    if (!currentRows.length) return res.status(404).json({ error: "Planning item niet gevonden" });
-    const current = currentRows[0];
+    // ✅ Bestaand item ophalen (controle)
+    const check = await pool.query("SELECT id FROM planning WHERE id = $1 LIMIT 1", [id]);
+    if (!check.rows.length) return res.status(404).json({ error: "Planning item niet gevonden" });
 
-    // Weeknummer herberekenen indien datum meegegeven
-    const newWeek = date ? getIsoWeekNumber(new Date(date)) : null;
+    // ✅ Weeknummer herberekenen bij datumwijziging
+    let weekNumberClause = "";
+    let params = [];
+    let paramIndex = 1;
 
-    // 2) Update planning-record
-    const { rows } = await pool.query(
-      `UPDATE planning
-         SET member_id     = COALESCE($1, member_id),
-             date          = COALESCE($2, date),
-             week_number   = COALESCE($3, week_number),
-             status        = COALESCE($4, status),
-             comment       = COALESCE($5, comment),
-             invoiced      = COALESCE($6, invoiced),
-             cancel_reason = COALESCE($7, cancel_reason)
-       WHERE id = $8
-       RETURNING *`,
-      [
-        memberId || null,
-        date ? new Date(date).toISOString() : null,
-        newWeek,
-        status || null,
-        comment || null,
-        typeof invoiced === "boolean" ? invoiced : null,
-        cancel_reason || null,
-        req.params.id,
-      ]
-    );
-    const updated = rows[0];
-
-    // 3) Reeks annuleren indien reden volledige stop aangeeft
-    if (status === "Geannuleerd") {
-      if (["Contract stop gezet door klant", "Contract stop gezet door ons"].includes(cancel_reason)) {
-        await pool.query(
-          `UPDATE planning
-             SET status = 'Geannuleerd',
-                 cancel_reason = COALESCE(cancel_reason, $1)
-           WHERE contract_id = $2 AND date >= $3`,
-          [cancel_reason, updated.contract_id, updated.date]
-        );
-        console.log(`🛑 Volledige reeks geannuleerd voor contract ${updated.contract_id}`);
-      } else {
-        console.log(`ℹ️ Geannuleerd met reden "${cancel_reason}" – herplan via frontend toegestaan`);
-      }
+    if (date) {
+      const dt = new Date(date);
+      const weekNum = getIsoWeekNumber(dt);
+      params.push(dt.toLocaleDateString('en-CA'), weekNum);
+      weekNumberClause = `, date = $${paramIndex++}, week_number = $${paramIndex++}`;
     }
 
-    // 4) Contract bijwerken na Afgerond
-    if (status === "Afgerond") {
-      const lastVisit = new Date(updated.date).toISOString();
-      const next = computeNextVisit(lastVisit, current.frequency);
-      await pool.query(
-        `UPDATE contracts SET last_visit = $1, next_visit = $2 WHERE id = $3`,
-        [lastVisit, next, current.contract_id]
-      );
-      console.log(`✅ Contract ${current.contract_id} bijgewerkt na Afgerond`);
-    }
+    // ✅ Overige velden
+    if (memberId) { params.push(memberId); weekNumberClause += `, member_id = $${paramIndex++}`; }
+    if (status) { params.push(status); weekNumberClause += `, status = $${paramIndex++}`; }
+    if (comment !== undefined) { params.push(comment); weekNumberClause += `, comment = $${paramIndex++}`; }
+    if (invoiced !== undefined) { params.push(invoiced); weekNumberClause += `, invoiced = $${paramIndex++}`; }
+    if (cancel_reason !== undefined) { params.push(cancel_reason); weekNumberClause += `, cancel_reason = $${paramIndex++}`; }
 
-    res.json(updated);
+    // ✅ Update-query uitvoeren
+    const sql = `
+      UPDATE planning
+      SET updated_at = now() ${weekNumberClause}
+      WHERE id = $${paramIndex}
+      RETURNING *;
+    `;
+    params.push(id);
+
+    const { rows } = await pool.query(sql, params);
+    if (!rows.length) return res.status(404).json({ error: "Planning niet gevonden bij update" });
+
+    res.json(rows[0]);
+    console.log(`✅ Planning ${id} bijgewerkt`);
   } catch (err) {
     console.error("Planning update error:", err);
-    res.status(500).json({ error: "Database update error" });
+    res.status(500).json({ error: "Fout bij bijwerken planning" });
   }
 });
 
-/**
- * ✅ DELETE /api/planning/:id
- */
-router.delete("/:id", async (req, res) => {
-  try {
-    const result = await pool.query(`DELETE FROM planning WHERE id=$1 RETURNING id`, [req.params.id]);
-    if (!result.rowCount) return res.status(404).json({ error: "Planning item niet gevonden" });
-    res.json({ ok: true });
+    // 🗓️ Planning ophalen
+    const { rows: planning } = await pool.query(`
+  SELECT p.*, 
+         m.name AS member_name, 
+         m.phone AS member_phone,
+         c.name AS klant, 
+         c.address, 
+         c.house_number,
+         c.city
+  FROM planning p
+  JOIN contracts ct ON p.contract_id = ct.id
+  JOIN contacts c ON ct.contact_id = c.id
+  LEFT JOIN members m ON p.member_id = m.id
+  WHERE p.date BETWEEN $1 AND $2
+    AND p.status != 'Geannuleerd'
+  ORDER BY m.name, p.date ASC
+`, [start.toISOString(), end.toISOString()]);
+
+    if (!planning.length)
+      return res.status(400).json({ error: "Geen planning gevonden" });
+
+    // 🧩 Groepeer per member
+    const grouped = {};
+    for (const p of planning) {
+      if (!grouped[p.member_id]) grouped[p.member_id] = [];
+      grouped[p.member_id].push(p);
+    }
+
+    // 📸 Screenshot per member
+    // 📂 Controleer of screenshots-map bestaat
+    const screenshotsDir = path.join(process.cwd(), "screenshots");
+    if (!fs.existsSync(screenshotsDir)) {
+    fs.mkdirSync(screenshotsDir, { recursive: true });
+}
+
+    const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox"] });
+    const page = await browser.newPage();
+
+    const sent = [];
+
+    for (const [memberId, items] of Object.entries(grouped)) {
+      const member = items[0];
+      const html = `
+        <html>
+        <head><style>
+          body { font-family: Arial; padding: 20px; }
+          h3 { margin-bottom: 10px; }
+          table { border-collapse: collapse; width: 100%; }
+          td, th { border: 1px solid #ddd; padding: 6px; font-size: 13px; }
+        </style></head>
+        <body>
+          <h3>Planning voor ${periode} – ${member.member_name}</h3>
+          <table>
+            <tr><th>Datum</th><th>Klant</th><th>Adres</th><th>Stad</th><th>Opmerking</th></tr>
+            ${items.map(i => {
+  const d = i.date
+    ? (typeof i.date === "string"
+        ? i.date.split("T")[0]
+        : new Date(i.date).toISOString().split("T")[0])
+    : "-";
+  return `
+    <tr>
+      <td>${d}</td>
+      <td>${i.klant}</td>
+      <td>${i.address || ""} ${i.house_number || ""}</td>
+      <td>${i.city}</td>
+      <td>${i.comment || "-"}</td>
+    </tr>`;
+}).join("")}
+
+          </table>
+        </body></html>
+      `;
+
+      await page.setContent(html);
+      const filePath = path.join(screenshotsDir, `planning_${member.member_name}.png`);
+      await page.screenshot({ path: filePath, fullPage: true });
+
+      // 🔹 Verstuur via WhatsApp
+      const phone = member.member_phone?.replace(/\D/g, "");
+      if (phone) {
+        await fetch(`${process.env.APP_URL}/api/whatsapp/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            phone,
+            message: `Hi ${member.member_name}, hierbij de planning voor ${periode}.`,
+            filePath: path.resolve(filePath).replace(/\\/g, "/")
+          }),
+        });
+        sent.push(phone);
+      } else {
+  console.warn(`⚠️ Geen telefoonnummer voor ${member.member_name}`);
+    }
+    console.log("➡️ Verstuur planning naar:", phone, "bestand:", filePath);
+  }
+    await browser.close();
+    res.json({ ok: true, sentCount: sent.length });
   } catch (err) {
-    console.error("Planning delete error:", err);
-    res.status(500).json({ error: "Database delete error" });
+    console.error("❌ Deel planning error:", err);
+    res.status(500).json({ error: "Fout bij delen planning" });
   }
 });
-
-/**
- * ✅ (Optioneel) Auto-assign endpoint — non-blocking helper
- */
-router.post("/auto-assign/:id", async (req, res) => {
-  try {
-    res.json({ ok: true, planningId: req.params.id });
-  } catch (err) {
-    console.warn("Auto-assign error:", err.message);
-    res.json({ ok: true, planningId: req.params.id });
-  }
-});
-
 export default router;

@@ -69,6 +69,9 @@ router.put("/:id", async (req, res) => {
     const { name, email, phone, roles, active, end_date } = req.body;
     const cleanRoles = Array.isArray(roles) ? roles : [];
 
+    // ✅ Convert leeg veld naar null
+    const safeEndDate = end_date && end_date.trim() !== "" ? end_date : null;
+
     const { rows } = await pool.query(
       `UPDATE members
        SET name = COALESCE($1, name),
@@ -79,7 +82,7 @@ router.put("/:id", async (req, res) => {
            end_date = COALESCE($6, end_date)
        WHERE id = $7
        RETURNING *`,
-      [name, email, phone, cleanRoles, active, end_date, req.params.id]
+      [name, email, phone, cleanRoles, active, safeEndDate, req.params.id]
     );
 
     if (!rows.length) return res.status(404).json({ error: "Member niet gevonden" });
@@ -89,6 +92,7 @@ router.put("/:id", async (req, res) => {
     res.status(500).json({ error: "Database update error" });
   }
 });
+
 
 /** ✅ DELETE – member verwijderen **/
 router.delete("/:id", async (req, res) => {

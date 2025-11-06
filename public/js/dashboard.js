@@ -425,6 +425,16 @@ function openClientDetail(c) {
     { id: "verzendMethode", label: "Verzendmethode", type: "select", options: ["Whatsapp", "Email"], value: c.verzend_methode },
     { id: "tag", label: "Tag", type: "select", options: settings.tags, value: c.tag },
     { id: "status", label: "Status", type: "select", options: ["Active", "Inactive"], value: c.status },
+    {
+      id: "cancel_reason",
+      label: "Reden beëindiging",
+      type: "select",
+      options: [
+        "Contract stop gezet door klant",
+        "Contract stop gezet door ons"
+      ],
+      // 🔥 (oude showIf mag weg — zie uitleg hieronder)
+    },
   ], async (vals) => {
     const res = await fetch(`/api/clients/${c.id}`, {
       method: "PUT",
@@ -447,7 +457,38 @@ function openClientDetail(c) {
     showToast("Klant verwijderd", "success");
     renderClients();
   }));
+
+  // --- Dynamisch tonen/verbergen Reden beëindiging ---
+setTimeout(() => {
+  const modal = document.querySelector(".modal-card");
+  if (!modal) return;
+
+  // ✅ Gebruik name-selectors in plaats van id
+  const statusSelect = modal.querySelector('[name="status"]');
+  const reasonSelect = modal.querySelector('[name="cancel_reason"]');
+  if (!statusSelect || !reasonSelect) return;
+
+  // direct verbergen bij start
+  reasonSelect.closest(".form-field").style.display = "none";
+
+  function toggleReasonField() {
+    if (statusSelect.value === "Inactive") {
+      reasonSelect.closest(".form-field").style.display = "block";
+      reasonSelect.required = true;
+    } else {
+      reasonSelect.closest(".form-field").style.display = "none";
+      reasonSelect.required = false;
+      reasonSelect.value = "";
+    }
+  }
+
+  toggleReasonField();
+  statusSelect.addEventListener("change", toggleReasonField);
+}, 50);
 }
+
+
+
 
 // ---------- 📄 Contracten ----------
 async function renderContracts() {
@@ -544,11 +585,14 @@ async function renderContracts() {
         c.price_inc ? `€${Number(c.price_inc).toFixed(2)}` : "€0.00",
         c.vat_pct ? `${c.vat_pct}%` : "-",
         c.last_visit ? c.last_visit.split("T")[0] : "-",
-        c.next_visit ? c.next_visit.split("T")[0] : "-"
+        c.next_visit ? c.next_visit.split("T")[0] : "-",
+        c.maandelijkse_facturatie || "Nee",
+        c.contract_beeindigd || "Nee",
+        c.contract_eind_datum ? c.contract_eind_datum.split("T")[0] : "-"
       ]);
 
       tableContainer.innerHTML = tableHTML(
-        ["Klant", "Type Service", "Frequentie", "Beschrijving", "Prijs incl.", "BTW", "Laatste bezoek", "Volgende bezoek"],
+        ["Klant", "Type Service", "Frequentie", "Beschrijving", "Prijs incl.", "BTW", "Laatste bezoek", "Volgende bezoek", "Maandelijkse facturatie", "Beëindigd", "Einddatum"],
         rows
       );
 
@@ -576,43 +620,136 @@ async function renderContracts() {
     // ✅ Eerste render
     renderFiltered();
 
-    // ✅ Nieuw contract toevoegen (ongewijzigd)
-    document.getElementById("newContractBtn").onclick = () =>
-      openModal("Nieuw Contract", [
-        { id: "clientId", label: "Klant", type: "select", options: clients.map(c => c.name) },
-        { id: "typeService", label: "Type service", type: "multiselect", options: settings.typeServices },
-        { id: "frequency", label: "Frequentie", type: "select", options: settings.frequencies },
-        { id: "description", label: "Beschrijving" },
-        { id: "priceEx", label: "Prijs excl. (€)" },
-        { id: "vatPct", label: "BTW (%)", type: "select", options: ["21", "9", "0"], value: "21" },
-        { id: "lastVisit", label: "Laatste bezoek", type: "date" },
-      ], async (vals) => {
-        try {
-          const client = clients.find(c => c.name === vals.clientId);
-          if (!client) return showToast("Selecteer een bestaande klant", "error");
+    // ✅ Nieuw contract toevoegen
+document.getElementById("newContractBtn").onclick = () => {
+  openModal("Nieuw Contract", [
+    { id: "clientId", label: "Klant", type: "select", options: clients.map(c => c.name) },
+    { id: "typeService", label: "Type service", type: "multiselect", options: settings.typeServices },
+    { id: "frequency", label: "Frequentie", type: "select", options: settings.frequencies },
+    { id: "description", label: "Beschrijving" },
+    { id: "priceEx", label: "Prijs excl. (€)" },
+    { id: "vatPct", label: "BTW (%)", type: "select", options: ["21", "9", "0"], value: "21" },
+    { id: "lastVisit", label: "Laatste bezoek", type: "date" },
+    { id: "maandelijkse_facturatie", label: "Maandelijkse Facturatie", type: "select", options: ["Ja", "Nee"], value: "Nee" },
+    { id: "invoice_day", label: "Dag van facturatie (1–31)", type: "number", min: 1, max: 31, value: "" },
+  ], async (vals) => {
+    try {
+      const client = clients.find(c => c.name === vals.clientId);
+      if (!client) {
+        showToast("Selecteer een bestaande klant", "error");
+        return;
+      }
 
-          const res = await fetch("/api/contracts", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ...vals, clientId: client.id }),
-          });
-          if (!res.ok) return showToast("Fout bij opslaan contract", "error");
-
-          const contract = await res.json();
-          contracts.unshift(contract);
-          showToast("Contract toegevoegd", "success");
-          await renderContracts();
-        } catch (err) {
-          console.error("❌ Fout bij opslaan contract:", err);
-          showToast("Onverwachte fout bij opslaan contract", "error");
-        }
+      const res = await fetch("/api/contracts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...vals, clientId: client.id }),
       });
 
+      if (!res.ok) {
+        showToast("Fout bij opslaan contract", "error");
+        return;
+      }
+
+      const contract = await res.json();
+      contracts.unshift(contract);
+      showToast("Contract toegevoegd", "success");
+      await renderContracts();
+    } catch (err) {
+      console.error("❌ Fout bij opslaan contract:", err);
+      showToast("Onverwachte fout bij opslaan contract", "error");
+    }
+  });
+
+  // --- Dynamisch tonen/verbergen facturatiedag ---
+  setTimeout(() => {
+    const modal = document.querySelector(".modal-card");
+    if (!modal) return;
+
+    const factSelect = modal.querySelector('[name="maandelijkse_facturatie"]');
+    const dayField = modal.querySelector('[name="invoice_day"]');
+    if (!factSelect || !dayField) return;
+
+    function toggleInvoiceDay() {
+      if (factSelect.value === "Ja") {
+        dayField.closest(".form-field").style.display = "block";
+        dayField.required = true;
+      } else {
+        dayField.closest(".form-field").style.display = "none";
+        dayField.required = false;
+        dayField.value = "";
+      }
+    }
+
+    toggleInvoiceDay();
+    factSelect.addEventListener("change", toggleInvoiceDay);
+  }, 50);
+}
   } catch (err) {
     console.error("❌ Fout bij laden contracten:", err);
-    showToast("Fout bij laden contractenlijst", "error");
+    list.innerHTML = `<p class="text-red-500">Fout bij laden contracten.</p>`;
   }
 }
+// ---------- 📄 Contract Detail ----------
+function openContractDetail(c) {
+  if (!c) return showToast("Ongeldig contractrecord", "error");
+
+  openModal(`Contract – ${c.client_name || "Onbekende klant"}`, [
+    { id: "id", label: "Contract ID", value: c.id, readonly: true },
+    { id: "client_name", label: "Klant", value: c.client_name || "-", readonly: true },
+    { id: "type_service", label: "Type Service", value: Array.isArray(c.type_service) ? c.type_service.join(", ") : c.type_service || "-" },
+    { id: "description", label: "Beschrijving", value: c.description || "-" },
+    { id: "frequency", label: "Frequentie", value: c.frequency || "-" },
+    { id: "price_inc", label: "Prijs (incl.)", value: c.price_inc ? `€${Number(c.price_inc).toFixed(2)}` : "€0.00" },
+    { id: "vat_pct", label: "BTW (%)", value: c.vat_pct || "-" },
+    { id: "last_visit", label: "Laatste bezoek", value: c.last_visit ? c.last_visit.split("T")[0] : "-", readonly: true },
+    { id: "next_visit", label: "Volgende bezoek", value: c.next_visit ? c.next_visit.split("T")[0] : "-", readonly: true },
+    { id: "maandelijkse_facturatie", label: "Maandelijkse facturatie", type: "select", options: ["Ja", "Nee"], value: c.maandelijkse_facturatie || "Nee" },
+    { id: "invoice_day", label: "Dag van facturatie (1–31)", type: "number", min: 1, max: 31, value: c.invoice_day || "" },
+  ], async (vals) => {
+    try {
+      const res = await fetch(`/api/contracts/${c.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(vals),
+      });
+      if (!res.ok) return showToast("Fout bij opslaan contract", "error");
+
+      const updated = await res.json();
+      Object.assign(c, updated);
+      showToast("Contract opgeslagen", "success");
+      renderContracts();
+    } catch (err) {
+      console.error("❌ Fout bij opslaan contract:", err);
+      showToast("Opslaan mislukt", "error");
+    }
+  }); // ✅ sluit openModal correct af
+
+  // --- Dynamisch tonen/verbergen facturatiedag ---
+  setTimeout(() => {
+    const modal = document.querySelector(".modal-card");
+    if (!modal) return;
+
+    const factSelect = modal.querySelector('[name="maandelijkse_facturatie"]');
+    const dayField = modal.querySelector('[name="invoice_day"]');
+    if (!factSelect || !dayField) return;
+
+    function toggleInvoiceDay() {
+      if (factSelect.value === "Ja") {
+        dayField.closest(".form-field").style.display = "block";
+        dayField.required = true;
+      } else {
+        dayField.closest(".form-field").style.display = "none";
+        dayField.required = false;
+        dayField.value = "";
+      }
+    }
+
+    toggleInvoiceDay();
+    factSelect.addEventListener("change", toggleInvoiceDay);
+  }, 50);
+}
+
 
 // ---------- Nieuw planning item: keuze ----------
 function choosePlanningType() {
@@ -799,41 +936,53 @@ async function openFrequencyPlanningModal() {
         </div>`
     },
     { id: "memberId", label: "Toegewezen medewerker", type: "select", options: (members||[]).map(m => m.name) },
-    { id: "startDate", label: "Startdatum", type: "date", value: new Date().toISOString().split("T")[0] }
+    { id: "startDate", label: "Nieuwe startdatum", type: "date", value: new Date().toISOString().split("T")[0] }
   ], async (vals) => {
-    if (!selectedContractId) return showToast("Selecteer eerst een geldig contract", "error");
-    if (!vals.startDate) return showToast("Startdatum is verplicht", "error");
+    if (!selectedContractId)
+      return showToast("Selecteer eerst een geldig contract", "error");
+    if (!vals.startDate)
+      return showToast("Startdatum is verplicht", "error");
 
     const memberObj = (members||[]).find(m => m.name === vals.memberId);
     const memberId  = memberObj ? memberObj.id : null;
 
     try {
-      const res = await fetch("/api/planning/update-frequency", {
+      // ✅ Nieuwe startdatum meesturen naar backend
+      const res = await fetch(`/api/planning/rebuild/${selectedContractId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          contractId: selectedContractId,
-          memberId,
-          startDate: vals.startDate
+          startDate: vals.startDate,
+          memberId
         })
       });
+
       const data = await res.json();
-      if (!res.ok) return showToast(data.error || "Fout bij bijwerken frequentie", "error");
-      showToast(`Planning vernieuwd (${data.updated || 0} items)`, "success");
+
+      if (!res.ok) {
+        showToast(data.error || "Fout bij herplannen reeks", "error");
+        return;
+      }
+
+      showToast(
+        `Reeks opnieuw aangemaakt vanaf ${vals.startDate} (${data.count || 0} items)`,
+        "success"
+      );
       await loadPlanningData();
     } catch (err) {
-      console.error("❌ update-frequency fout:", err);
-      showToast("Onverwachte fout bij update", "error");
+      console.error("❌ Fout bij herplannen reeks:", err);
+      showToast("Onverwachte fout bij herplannen reeks", "error");
     }
   });
 
+  // Zet knoptekst op “Updaten”
   setTimeout(() => {
     const card = document.querySelector(".modal-card");
     const saveBtn = card?.querySelector("#save");
     if (saveBtn) saveBtn.textContent = "Updaten";
   }, 0);
 
-  // autocomplete
+  // Autocomplete functionaliteit
   setTimeout(() => {
     const modal = document.querySelector(".modal-card");
     if (!modal) return;
@@ -885,6 +1034,8 @@ async function openFrequencyPlanningModal() {
 
 
 
+
+
 // ---------- Automatische generatie ----------
 async function generatePlanning() {
   showToast("Planning wordt gegenereerd...", "info");
@@ -902,6 +1053,8 @@ async function generatePlanning() {
 
 // ---------- Data opnieuw laden ----------
 async function loadPlanningData() {
+  console.log("🔍 loadPlanningData triggered:", document.getElementById("planningFilter")?.value);
+  
   const filter = document.getElementById("planningFilter")?.value || "all";
   const dateInput = document.getElementById("customDate");
   const tbl = document.getElementById("planningTable");
@@ -943,7 +1096,19 @@ if (weekNumber) url.searchParams.set("week", weekNumber);
   const data = await res.json();
   planning = data.items || [];
 
-  const rows = planning.map(p => [
+  // ✅ Zoekfilter toepassen
+const searchTerm = document.getElementById("planningSearch")?.value?.toLowerCase().trim();
+let filtered = planning;
+if (searchTerm) {
+  filtered = planning.filter(p =>
+    [p.customer, p.address, p.city, p.member_name, p.comment, p.status]
+      .filter(Boolean)
+      .some(val => val.toLowerCase().includes(searchTerm))
+  );
+}
+
+
+  const rows = filtered.map(p => [
     `${p.address || ""} ${p.house_number || ""}, ${p.city || ""}`,
     p.customer || "-",
     p.date ? p.date.split("T")[0] : "-",
@@ -963,10 +1128,10 @@ if (weekNumber) url.searchParams.set("week", weekNumber);
     tr.addEventListener("click", () => openPlanningDetail(planning[i]))
   );
 
-  document.getElementById("planningFilter").onchange = loadPlanningData;
-  document.getElementById("memberFilter").onchange = loadPlanningData;
-  document.getElementById("customDate").onchange = loadPlanningData;
-  document.getElementById("statusFilter").onchange = loadPlanningData;
+  //document.getElementById("planningFilter").onchange = loadPlanningData;
+  //document.getElementById("memberFilter").onchange = loadPlanningData;
+  //document.getElementById("customDate").onchange = loadPlanningData;
+  //document.getElementById("statusFilter").onchange = loadPlanningData;
 
     // 👇 Toevoegen zodat Enter of wijziging van weeknummer filter werkt
   const weekInput = document.getElementById("filterWeek");
@@ -983,8 +1148,9 @@ if (weekNumber) url.searchParams.set("week", weekNumber);
 
 const newBtn = document.getElementById("newPlanningBtn");
 if (newBtn && typeof choosePlanningType === "function") newBtn.onclick = choosePlanningType;
-
 }
+
+
 
 // ---------- Detail bewerken ----------
 function openPlanningDetail(p) {
@@ -1032,63 +1198,16 @@ function openPlanningDetail(p) {
         return;
       }
 
+      // ✅ Nieuwe annuleerlogica
       if (payload.status === "Geannuleerd") {
-        if (["Contract stop gezet door klant", "Contract stop gezet door ons"].includes(payload.cancel_reason)) {
-          showToast("Reeks geannuleerd", "success");
-          await loadPlanningData();
-          return;
-        }
-
-        const herplan = confirm("Wil je her-inplannen volgens frequentie?\n\nOK = automatisch, Annuleren = zelf datum kiezen.");
-        if (herplan) {
-          const resAuto = await fetch(`/api/planning/replan/${p.id}`, { method: "POST" });
-          if (resAuto.ok) {
-            showToast("Automatische herplanning aangemaakt", "success");
-            await loadPlanningData();
-          } else showToast("Fout bij automatisch herplannen", "error");
-        } else {
-          const overlay = document.createElement("div");
-          overlay.className = "modal-overlay fixed inset-0 bg-black/40 flex items-center justify-center z-50";
-          const card = document.createElement("div");
-          card.className = "modal-card bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-xl space-y-4";
-          card.innerHTML = `
-            <h3 class="text-lg font-semibold">Kies nieuwe datum</h3>
-            <input type="date" id="manualDateInput" class="input w-full"
-              min="${new Date().toISOString().split("T")[0]}"
-              value="${new Date().toISOString().split("T")[0]}" />
-            <div class="flex justify-end gap-2 mt-4">
-              <button id="cancelDate" class="btn btn-secondary">Annuleren</button>
-              <button id="okDate" class="btn btn-ok">Bevestigen</button>
-            </div>`;
-          overlay.appendChild(card);
-          document.body.appendChild(overlay);
-          overlay.addEventListener("click", e => { if (e.target === overlay) overlay.remove(); });
-          card.querySelector("#cancelDate").onclick = () => overlay.remove();
-          card.querySelector("#okDate").onclick = async () => {
-            const nieuwe = card.querySelector("#manualDateInput").value;
-            if (nieuwe) {
-              const resNew = await fetch("/api/planning", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  contractId: p.contract_id || p.contractId,
-                  date: nieuwe,
-                  status: "Gepland",
-                  comment: vals.comment || p.comment || null
-                })
-              });
-              if (resNew.ok) {
-                showToast("Nieuwe afspraak ingepland", "success");
-                await loadPlanningData();
-              } else showToast("Fout bij nieuwe afspraak", "error");
-            }
-            overlay.remove();
-          };
-        }
+        showToast("Afspraak geannuleerd — opmerking doorgeschoven", "info");
+        await loadPlanningData();
+        return;
       }
 
-      if (payload.status === "Afgerond")
+      if (payload.status === "Afgerond") {
         showToast("Afspraak afgerond — contract bijgewerkt", "info");
+      }
 
       await loadPlanningData();
     } catch (err) {
@@ -1096,6 +1215,7 @@ function openPlanningDetail(p) {
       showToast("Onverwachte fout bij opslaan planning item", "error");
     }
   });
+
 
   // 🔹 Dynamisch tonen/verbergen van "Reden geannuleerd"
   setTimeout(() => {
@@ -1115,11 +1235,13 @@ function openPlanningDetail(p) {
 async function renderPlanning() {
   const list = document.getElementById("planningList");
 
+  // ✅ Members ophalen indien nog niet geladen
   if (!Array.isArray(members) || !members.length) {
     const mRes = await fetch("/api/members");
     if (mRes.ok) members = await mRes.json();
   }
 
+  // ✅ Eerste basis-load (alles)
   const range = "all";
   const url = new URL("/api/planning/schedule", window.location.origin);
   url.searchParams.set("range", range);
@@ -1132,21 +1254,25 @@ async function renderPlanning() {
 
   planning = (await res.json()).items || [];
 
+  // ---------- Filters + knoppen ----------
   const controlsHTML = `
-  <div class="flex justify-between mb-2 flex-wrap gap-2">
+  <div class="flex justify-between mb-2 flex-wrap gap-2 items-center">
     <h2 class="text-xl font-semibold">Planning</h2>
-    <div class="flex flex-wrap gap-2">
+    <div class="flex flex-wrap gap-2 items-center justify-end w-full md:w-auto">
       <select id="planningFilter"
               class="border rounded px-2 py-1 bg-white text-gray-800
                      dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600">
         <option value="today">Vandaag</option>
+        <option value="tomorrow">Morgen</option>
         <option value="week">Deze week</option>
         <option value="month">Deze maand</option>
         <option value="year">Dit jaar</option>
         <option value="date">Specifieke datum…</option>
         <option value="all" selected>Alles</option>
       </select>
-       <input id="filterWeek" type="number" min="1" max="53" placeholder="Week #" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700" />
+
+      <input id="filterWeek" type="number" min="1" max="53" placeholder="Week #"
+             class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700" />
 
       <input id="customDate" type="date"
              class="hidden border rounded px-2 py-1 bg-white text-gray-800
@@ -1168,6 +1294,12 @@ async function renderPlanning() {
         <option value="Geannuleerd">Geannuleerd</option>
       </select>
 
+      <!-- 🔍 Zoekveld naar rechts -->
+      <input id="planningSearch" type="text"
+             placeholder="Zoek klant, adres, member..."
+             class="border rounded px-2 py-1 w-64 text-sm bg-white text-gray-800
+                    dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600" />
+
       <button id="generatePlanningBtn"
               class="bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700">
         ⚙️ Genereer
@@ -1176,13 +1308,87 @@ async function renderPlanning() {
               class="bg-primary text-white px-3 py-2 rounded hover:bg-blue-700">
         + Nieuw Item
       </button>
+      <button id="sharePlanningBtn"
+              class="bg-primary text-white px-3 py-2 rounded hover:bg-blue-700">
+        📤 Deel planning
+      </button>
     </div>
   </div>
   <div id="planningTable"></div>`;
+
+  
+
   list.innerHTML = controlsHTML;
 
+  // ✅ Eén enkele load (geen dubbele meer)
   await loadPlanningData();
+
+  // ✅ Filters activeren – blijven actief zolang tab open blijft
+  const filterIds = ["planningFilter", "memberFilter", "statusFilter", "customDate", "filterWeek"];
+  filterIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+
+    if (id === "filterWeek") {
+      el.addEventListener("keydown", e => { if (e.key === "Enter") loadPlanningData(); });
+      el.addEventListener("change", loadPlanningData);
+    } else {
+      el.addEventListener("change", loadPlanningData);
+    }
+  });
+
+  // ✅ Toon/verberg datumveld bij “Specifieke datum”
+  const planningFilter = document.getElementById("planningFilter");
+  const customDate = document.getElementById("customDate");
+  if (planningFilter && customDate) {
+    const toggleDate = () => {
+      customDate.classList.toggle("hidden", planningFilter.value !== "date");
+    };
+    planningFilter.addEventListener("change", toggleDate);
+    toggleDate(); // direct uitvoeren
+  }
+
+  // ✅ Deel planning knop activeren
+  const shareBtn = document.getElementById("sharePlanningBtn");
+  if (shareBtn) {
+    shareBtn.onclick = async () => {
+      openModal("Deel Planning", [
+        { id: "periode", label: "Selecteer periode", type: "select", options: ["Voor Morgen", "Deze Week", "Deze Maand"] }
+      ], async (vals) => {
+        showToast(`Planning wordt gedeeld (${vals.periode})`, "info");
+
+        const res = await fetch("/api/planning/share", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ periode: vals.periode })
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+          showToast(`Planning gedeeld met ${data.sentCount} members`, "success");
+        } else {
+          showToast(data.error || "Fout bij delen planning", "error");
+        }
+      });
+
+      setTimeout(() => {
+        const modal = document.querySelector(".modal-card");
+        const saveBtn = modal?.querySelector("#save");
+        if (saveBtn) saveBtn.textContent = "Delen";
+      }, 0);
+    };
+  }
+
+  // ✅ Buttons koppelen (veiligheid)
+  const genBtn = document.getElementById("generatePlanningBtn");
+  if (genBtn && typeof generatePlanning === "function")
+    genBtn.onclick = generatePlanning;
+
+  const newBtn = document.getElementById("newPlanningBtn");
+  if (newBtn && typeof choosePlanningType === "function")
+    newBtn.onclick = choosePlanningType;
 }
+
 
 // ---------- Facturen ----------
 function renderInvoices(){

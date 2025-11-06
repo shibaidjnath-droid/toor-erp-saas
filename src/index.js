@@ -15,6 +15,8 @@ import settingsRouter from './routes/settings.js';
 import leadsRouter from './routes/leads.js';
 import quotesRouter from './routes/quotes.js';
 import planningRouter from './routes/planning.js';
+import whatsappRouter from "./routes/whatsapp.js";
+import invoicesYukiRouter from "./routes/invoicesYuki.js";
 
 // 🔥 NIEUW — deze ontbraken
 import contractsRouter from './routes/contracts.js';
@@ -43,6 +45,8 @@ app.use('/api/settings', settingsRouter);
 app.use('/api/leads', leadsRouter);
 app.use('/api/quotes', quotesRouter);
 app.use('/api/planning', planningRouter);
+//app.use('/dashboard/api/planning', planningRouter);
+app.use("/api/invoices-yuki", invoicesYukiRouter);
 
 // 🔥 NIEUW mounts
 app.use('/api/contracts', contractsRouter);
@@ -50,6 +54,7 @@ app.use('/api/members', membersRouter);
 app.use('/api/roles', rolesRouter);
 app.use('/api/service-types', serviceTypesRouter);
 app.use('/api/import-export', importExportRouter);
+app.use("/api/whatsapp", whatsappRouter);
 
 // dashboard
 app.get('/dashboard', (_req, res) => {

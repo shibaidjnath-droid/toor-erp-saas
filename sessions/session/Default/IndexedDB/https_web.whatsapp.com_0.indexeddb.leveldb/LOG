@@ -1,0 +1,57 @@
+2025/11/06-09:14:16.785 5780 Reusing MANIFEST C:\Users\shiba\Desktop\TOOR ERP\TOOR ERP Kristalhelder TEST\sessions\session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2025/11/06-09:14:16.789 5780 Recovering log #1265
+2025/11/06-09:14:16.946 5780 Reusing old log C:\Users\shiba\Desktop\TOOR ERP\TOOR ERP Kristalhelder TEST\sessions\session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/001265.log 
+2025/11/06-09:14:16.946 5780 Delete type=2 #1256
+2025/11/06-09:14:16.947 5780 Delete type=2 #1257
+2025/11/06-09:14:16.947 5780 Delete type=2 #1258
+2025/11/06-09:14:16.947 5780 Delete type=2 #1259
+2025/11/06-09:14:16.947 5780 Delete type=2 #1260
+2025/11/06-09:14:16.947 5780 Delete type=2 #1261
+2025/11/06-09:14:16.947 5780 Delete type=2 #1262
+2025/11/06-09:14:16.947 5780 Delete type=2 #1263
+2025/11/06-09:14:16.947 5780 Delete type=2 #1268
+2025/11/06-09:14:29.694 4d00 Level-0 table #1282: started
+2025/11/06-09:14:29.795 4d00 Level-0 table #1282: 888104 bytes OK
+2025/11/06-09:14:29.805 4d00 Delete type=0 #1265
+2025/11/06-09:14:29.806 4d00 Manual compaction at level-0 from '\x00K\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00L\x00\x00\x00' @ 0 : 0; will stop at '\x00K\x00\x00\x05' @ 2947135 : 1
+2025/11/06-09:14:29.806 4d00 Compacting 1@0 + 0@1 files
+2025/11/06-09:14:29.962 4d00 Generated table #1283@0: 9645 keys, 226033 bytes
+2025/11/06-09:14:29.973 4d00 Generated table #1284@0: 1518 keys, 76188 bytes
+2025/11/06-09:14:29.973 4d00 Compacted 1@0 + 0@1 files => 302221 bytes
+2025/11/06-09:14:29.975 4d00 compacted to: files[ 0 2 22 0 0 0 0 ]
+2025/11/06-09:14:29.976 4d00 Delete type=2 #1282
+2025/11/06-09:14:29.976 4d00 Manual compaction at level-0 from '\x00K\x00\x00\x05' @ 2947135 : 1 .. '\x00L\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/11/06-09:14:36.399 5780 Compacting 1@1 + 8@2 files
+2025/11/06-09:14:36.532 5780 Generated table #1285@1: 22500 keys, 2251001 bytes
+2025/11/06-09:14:36.666 5780 Generated table #1286@1: 10245 keys, 2142905 bytes
+2025/11/06-09:14:36.744 5780 Generated table #1287@1: 17043 keys, 2140631 bytes
+2025/11/06-09:14:37.094 5780 Generated table #1288@1: 106185 keys, 2257038 bytes
+2025/11/06-09:14:37.432 5780 Generated table #1289@1: 99460 keys, 2250244 bytes
+2025/11/06-09:14:37.744 5780 Generated table #1290@1: 98127 keys, 2248312 bytes
+2025/11/06-09:14:38.171 5780 Generated table #1291@1: 98262 keys, 2247709 bytes
+2025/11/06-09:14:38.359 5780 Generated table #1292@1: 46548 keys, 1078743 bytes
+2025/11/06-09:14:38.359 5780 Compacted 1@1 + 8@2 files => 16616583 bytes
+2025/11/06-09:14:38.360 5780 compacted to: files[ 0 1 22 0 0 0 0 ]
+2025/11/06-09:14:38.361 5780 Delete type=2 #1272
+2025/11/06-09:14:38.361 5780 Delete type=2 #1273
+2025/11/06-09:14:38.361 5780 Delete type=2 #1274
+2025/11/06-09:14:38.361 5780 Delete type=2 #1275
+2025/11/06-09:14:38.361 5780 Delete type=2 #1276
+2025/11/06-09:14:38.361 5780 Delete type=2 #1277
+2025/11/06-09:14:38.362 5780 Delete type=2 #1278
+2025/11/06-09:14:38.362 5780 Delete type=2 #1279
+2025/11/06-09:14:38.362 5780 Delete type=2 #1284
+2025/11/06-09:14:38.418 5780 Compacting 1@1 + 12@2 files
+2025/11/06-09:14:38.747 5780 Generated table #1293@1: 61722 keys, 2230413 bytes
+2025/11/06-09:14:38.845 5780 Generated table #1294@1: 5160 keys, 2159938 bytes
+2025/11/06-09:14:38.922 5780 Generated table #1295@1: 2519 keys, 2151230 bytes
+2025/11/06-09:14:39.000 5780 Generated table #1296@1: 2826 keys, 2164360 bytes
+2025/11/06-09:14:39.090 5780 Generated table #1297@1: 3042 keys, 2157311 bytes
+2025/11/06-09:14:39.198 5780 Generated table #1298@1: 2728 keys, 2153650 bytes
+2025/11/06-09:14:39.261 5780 Generated table #1299@1: 2498 keys, 2150049 bytes
+2025/11/06-09:14:39.356 5780 Generated table #1300@1: 14271 keys, 2171352 bytes
+2025/11/06-09:14:39.533 5780 Generated table #1301@1: 27853 keys, 2264774 bytes
+2025/11/06-09:14:39.652 5780 Generated table #1302@1: 27049 keys, 2261874 bytes
+2025/11/06-09:14:39.669 5780 Generated table #1303@1: 1794 keys, 153446 bytes
+2025/11/06-09:14:39.669 5780 Compacted 1@1 + 12@2 files => 22018397 bytes
+2025/11/06-09:14:39.670 5780 compacted to: files[ 0 0 21 0 0 0 0 ]
