@@ -111,7 +111,7 @@ console.log("🧾 XML naar Yuki:\n", xmlDoc);
   const [result] = await yuki.ProcessSalesInvoicesAsync({
     sessionID,
     administrationID: YUKI_ADMIN_ID,
-    xmlDoc: xmlDoc
+    xmlDoc: `<![CDATA[${xmlDoc}]]>` 
   });
 
   const xmlResponse = result.ProcessSalesInvoicesResult;
