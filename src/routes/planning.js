@@ -406,53 +406,50 @@ router.post("/share", async (req, res) => {
         end.setDate(0);
         break;
     }
-/** ✅ PUT /api/planning/:id
- *  Werkt bestaande planning bij (datum, status, member, comment, invoiced, cancel_reason)
- */
+/** ✅ PUT /api/planning/:id */
 router.put("/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const { date, memberId, status, comment, invoiced, cancel_reason } = req.body;
 
-    // ✅ Bestaand item ophalen (controle)
+    // Recordcontrole
     const check = await pool.query("SELECT id FROM planning WHERE id = $1 LIMIT 1", [id]);
-    if (!check.rows.length) return res.status(404).json({ error: "Planning item niet gevonden" });
+    if (!check.rows.length) return res.status(404).json({ error: "Planning niet gevonden" });
 
-    // ✅ Weeknummer herberekenen bij datumwijziging
-    let weekNumberClause = "";
-    let params = [];
-    let paramIndex = 1;
+    // Querydelen opbouwen
+    const updates = [];
+    const params = [];
+    let i = 1;
 
     if (date) {
       const dt = new Date(date);
-      const weekNum = getIsoWeekNumber(dt);
-      params.push(dt.toLocaleDateString('en-CA'), weekNum);
-      weekNumberClause = `, date = $${paramIndex++}, week_number = $${paramIndex++}`;
+      updates.push(`date = $${i++}`);
+      params.push(dt.toLocaleDateString("en-CA")); // lokale datum (geen -1)
+      updates.push(`week_number = $${i++}`);
+      params.push(getIsoWeekNumber(dt));
     }
+    if (memberId) { updates.push(`member_id = $${i++}`); params.push(memberId); }
+    if (status) { updates.push(`status = $${i++}`); params.push(status); }
+    if (comment !== undefined) { updates.push(`comment = $${i++}`); params.push(comment); }
+    if (invoiced !== undefined) { updates.push(`invoiced = $${i++}`); params.push(invoiced); }
+    if (cancel_reason !== undefined) { updates.push(`cancel_reason = $${i++}`); params.push(cancel_reason); }
 
-    // ✅ Overige velden
-    if (memberId) { params.push(memberId); weekNumberClause += `, member_id = $${paramIndex++}`; }
-    if (status) { params.push(status); weekNumberClause += `, status = $${paramIndex++}`; }
-    if (comment !== undefined) { params.push(comment); weekNumberClause += `, comment = $${paramIndex++}`; }
-    if (invoiced !== undefined) { params.push(invoiced); weekNumberClause += `, invoiced = $${paramIndex++}`; }
-    if (cancel_reason !== undefined) { params.push(cancel_reason); weekNumberClause += `, cancel_reason = $${paramIndex++}`; }
+    if (!updates.length) return res.status(400).json({ error: "Geen velden om bij te werken" });
 
-    // ✅ Update-query uitvoeren
+    // SQL correct opbouwen
     const sql = `
       UPDATE planning
-      SET updated_at = now() ${weekNumberClause}
-      WHERE id = $${paramIndex}
+      SET ${updates.join(", ")}, updated_at = now()
+      WHERE id = $${i}
       RETURNING *;
     `;
     params.push(id);
 
     const { rows } = await pool.query(sql, params);
-    if (!rows.length) return res.status(404).json({ error: "Planning niet gevonden bij update" });
-
     res.json(rows[0]);
     console.log(`✅ Planning ${id} bijgewerkt`);
   } catch (err) {
-    console.error("Planning update error:", err);
+    console.error("❌ Planning update error:", err);
     res.status(500).json({ error: "Fout bij bijwerken planning" });
   }
 });
