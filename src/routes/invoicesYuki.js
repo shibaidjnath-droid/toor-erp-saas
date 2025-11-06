@@ -112,7 +112,7 @@ async function sendInvoiceToYuki(clientId, contractId, planningId) {
   const [result] = await yuki.ProcessSalesInvoicesAsync({
     sessionID,
     administrationID: YUKI_ADMIN_ID,
-    xmlDoc,
+    xmlDoc: xmlDoc,
   });
 
   const xmlResponse = result.ProcessSalesInvoicesResult;
