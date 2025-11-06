@@ -1,180 +1,257 @@
 // routes/invoicesYuki.js
 import express from "express";
 import { pool } from "../db.js";
-import soap from "soap";
+import axios from "axios";
 import { XMLBuilder } from "fast-xml-parser";
 
 const router = express.Router();
 
 // 🔐 Config
-const YUKI_WSDL = "https://api.yukiworks.nl/ws/Sales.asmx?wsdl";
+const YUKI_BASE = "https://api.yukiworks.nl/ws/Sales.asmx";
 const YUKI_ACCESS_KEY = "f954f4dc-00dc-443d-aa3a-991de5118fab";
-const YUKI_ADMIN_ID = process.env.YUKI_ADMIN_ID || "VUL_HIER_ADMIN_ID_IN";
+const YUKI_ADMIN_ID = "72314c09-dbac-4b0d-9b21-b49498553b4a"; // jouw administratie-id
 
-/** ✅ Helper: login bij Yuki */
+/** ✅ Authenticate bij Yuki */
 async function authenticateYuki() {
-  const client = await soap.createClientAsync(YUKI_WSDL);
-  const [result] = await client.AuthenticateAsync({ accessKey: YUKI_ACCESS_KEY });
-  const sessionID = result.AuthenticateResult;
-  if (!sessionID) throw new Error("Geen sessionID ontvangen van Yuki");
-  return { client, sessionID };
+  const res = await axios.post(
+    `${YUKI_BASE}/Authenticate`,
+    `accessKey=${YUKI_ACCESS_KEY}`,
+    { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+  );
+  const sessionId = res.data.match(/<string.*?>(.*?)<\/string>/)?.[1];
+  if (!sessionId) throw new Error("Geen sessionID ontvangen van Yuki");
+  return sessionId;
 }
 
-/** ✅ Helper: bouw XML voor 1 factuur */
-function buildInvoiceXML(client, contract, planning) {
+/** ✅ Bouw XML voor een factuur */
+function buildInvoiceXML(row) {
   const builder = new XMLBuilder({ ignoreAttributes: false, format: true });
-  const xml = builder.build({
-    ArrayOfSalesInvoice: {
+  const salesInvoiceXML = builder.build({
+    SalesInvoices: {
       "@_xmlns": "urn:xmlns:http://www.theyukicompany.com:salesinvoices",
       SalesInvoice: {
-        Subject: `Factuur ${contract.type_service?.join(", ") || "Dienst"}`,
+        Subject: `Factuur ${row.description || "Dienst"}`,
         PaymentMethod: "ElectronicTransfer",
-        Process: "true",
-        EmailToCustomer: "true",
-        Date: new Date(planning.date).toISOString().split("T")[0],
+        Process: true,
+        EmailToCustomer: true,
+        Date: new Date(row.date).toISOString().split("T")[0],
         DueDate: new Date(
-          new Date(planning.date).setDate(new Date(planning.date).getDate() + 30)
+          new Date(row.date).setDate(new Date(row.date).getDate() + 30)
         )
           .toISOString()
           .split("T")[0],
         Currency: "EUR",
-
-        // ✅ YUKI verwacht <Customer> i.p.v. <Contact> en GEEN <Address>-node
-        Customer: {
-  FullName:
-    client.type_klant === "Zakelijk"
-      ? client.bedrijfsnaam
-      : client.name,
-  AddressLine_1: `${client.address} ${client.house_number || ""}`.trim(),
-  Zipcode: client.postcode || "",
-  City: client.city || "",
-  CountryCode: "NL",
-  EmailAddress: client.email,
-  PhoneNumber: client.phone || "",
-  VATNumber: client.btw || "",
-  CoCNumber: client.kvk || "",
-  ContactType:
-    client.type_klant === "Zakelijk" ? "Organisation" : "Person",
-},
-
-
+        Contact: {
+          FullName: row.name || row.bedrijfsnaam || "Onbekend",
+          CountryCode: "NL",
+          City: row.city || "",
+          AddressLine_1: `${row.address || ""} ${row.house_number || ""} ${
+            row.postcode || ""
+          }`,
+          EmailAddress: row.email || "",
+          PhoneHome: row.phone || "",
+        },
         InvoiceLines: {
           InvoiceLine: {
-            Description:
-              contract.description ||
-              contract.type_service?.join(", ") ||
-              "Dienstverlening",
-            ProductQuantity: "1",
-            LineAmount: contract.price_inc || "0.00",
-            VATPercentage: contract.vat_pct || "21",
-            VATIncluded: "true",
-            GLAccountCode: "8400",
+            Description: row.description || "Dienstverlening",
+            ProductQuantity: 1,
+            LineAmount: row.price_inc || "0.00",
+            Product: {
+              Description: row.description || "Dienst",
+              SalesPrice: row.price_inc || "0.00",
+              VATPercentage: row.vat_pct || "21.00",
+              VATType: 1,
+              GLAccountCode: "8000",
+            },
           },
         },
       },
     },
   });
 
-  return xml;
+  return `<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+               xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+               xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <ProcessSalesInvoices xmlns="http://www.theyukicompany.com/">
+      <sessionId>${row.sessionId}</sessionId>
+      <administrationId>${YUKI_ADMIN_ID}</administrationId>
+      <xmlDoc>${salesInvoiceXML}</xmlDoc>
+    </ProcessSalesInvoices>
+  </soap:Body>
+</soap:Envelope>`;
 }
 
-/** ✅ Core-functie: stuur naar Yuki */
-async function sendInvoiceToYuki(clientId, contractId, planningId) {
-  // 1️⃣ Data ophalen
-  const { rows: data } = await pool.query(
-    `SELECT 
-       ct.id AS contract_id, ct.type_service, ct.description, ct.price_inc, ct.vat_pct,
-       p.id AS planning_id, p.date, p.status,
-       c.id AS client_id, c.name, c.bedrijfsnaam, c.email, c.phone,
-       c.address, c.house_number, c.postcode, c.city,
-       c.type_klant, c.btw, c.kvk
-     FROM planning p
-     JOIN contracts ct ON p.contract_id = ct.id
-     JOIN contacts c ON ct.contact_id = c.id
-     WHERE c.id = $1 AND ct.id = $2 AND p.id = $3
-     LIMIT 1`,
-    [clientId, contractId, planningId]
-  );
-  if (!data.length) throw new Error("Geen data gevonden voor Yuki-factuur");
+/** ✅ Helper: verstuur één factuur */
+async function sendInvoice(row) {
+  const xmlBody = buildInvoiceXML(row);
+  const res = await axios.post(YUKI_BASE, xmlBody, {
+    headers: {
+      "Content-Type": "text/xml; charset=utf-8",
+      SOAPAction: '"http://www.theyukicompany.com/ProcessSalesInvoices"',
+    },
+  });
 
-  const row = data[0];
+  const xml = res.data;
+  const succeeded = xml.includes("<Succeeded>true</Succeeded>");
+  const message =
+    xml.match(/<Message>(.*?)<\/Message>/)?.[1] ||
+    (succeeded ? "OK" : "Onbekende fout");
 
-  // 2️⃣ Login bij Yuki
-  const { client: yuki, sessionID } = await authenticateYuki();
-
- // 3️⃣ XML opbouwen
-let xmlDoc = buildInvoiceXML(row, row, row);
-
-// voeg de XML-header toe
-xmlDoc = '<?xml version="1.0" encoding="utf-8"?>\n' + xmlDoc.toString().trim();
-
-// log wat we echt gaan sturen
-console.log("🧾 XML naar Yuki:\n", xmlDoc);
-
-// ✅ wrap de XML in CDATA zodat Yuki het als string ziet
-const xmlCDATA = `<![CDATA[${xmlDoc}]]>`;
-
-// 4️⃣ Call ProcessSalesInvoices
-const [result] = await yuki.ProcessSalesInvoicesAsync({
-  sessionID: sessionID,
-  administrationID: YUKI_ADMIN_ID,
-  xmlDoc: xmlCDATA,   // let op: kleine d, exact zo
-});
-
-
-  const xmlResponse = result.ProcessSalesInvoicesResult;
-
-  // 5️⃣ Basis logging / parsing (simpel check)
-  const success = xmlResponse.includes("<Succeeded>true</Succeeded>");
-  const message = xmlResponse.match(/<Message>(.*?)<\/Message>/)?.[1] || "";
-
-  if (!success) throw new Error(`Yuki-fout: ${message}`);
-
-  // 6️⃣ Yuki factuurnummer uitlezen
-  const invoiceNr =
-    xmlResponse.match(/<SalesInvoiceNumber>(.*?)<\/SalesInvoiceNumber>/)?.[1] ||
-    null;
-
-  // 7️⃣ Opslaan in DB
-  await pool.query(
-    `INSERT INTO invoices (contact_id, customer, amount, status, created_at, yuki_number)
-     VALUES ($1,$2,$3,$4,now(),$5)
-     RETURNING id`,
-    [row.client_id, row.name, row.price_inc, "verzonden", invoiceNr]
-  );
-
-  await pool.query(`UPDATE planning SET invoiced = true WHERE id = $1`, [
-    row.planning_id,
-  ]);
-
-  console.log(`✅ Yuki factuur aangemaakt: ${invoiceNr}`);
-  return { invoiceNr, message };
+  return { success: succeeded, message, xml };
 }
 
-/** ✅ Route: test één factuur */
+/** ✅ Route 1: Enkelvoudige factuur (Factureer een klant) */
 router.post("/manual", async (req, res) => {
   try {
     const { clientId, contractId, planningId } = req.body;
     if (!clientId || !contractId || !planningId)
-      return res.status(400).json({ error: "clientId, contractId, planningId vereist" });
+      return res
+        .status(400)
+        .json({ error: "clientId, contractId en planningId zijn verplicht" });
 
-    const result = await sendInvoiceToYuki(clientId, contractId, planningId);
-    res.json({ success: true, result });
+    const { rows } = await pool.query(
+      `SELECT 
+         c.id AS client_id, c.name, c.email, c.phone, c.address, c.house_number, c.postcode, c.city, c.type_klant,
+         ct.id AS contract_id, ct.description, ct.price_inc, ct.vat_pct, ct.maandelijkse_facturatie,
+         p.id AS planning_id, p.date, p.status, p.invoiced
+       FROM planning p
+       JOIN contracts ct ON p.contract_id = ct.id
+       JOIN contacts c ON ct.contact_id = c.id
+       WHERE c.id=$1 AND ct.id=$2 AND p.id=$3
+         AND p.status NOT IN ('Geannuleerd','Gepland')
+         AND p.invoiced=false
+         AND (ct.maandelijkse_facturatie=false OR ct.maandelijkse_facturatie IS NULL)
+       LIMIT 1`,
+      [clientId, contractId, planningId]
+    );
+
+    if (!rows.length)
+      return res.status(404).json({ error: "Geen geschikt record gevonden" });
+
+    const sessionId = await authenticateYuki();
+    const row = rows[0];
+    row.sessionId = sessionId;
+
+    const result = await sendInvoice(row);
+
+    if (result.success) {
+      await pool.query(`UPDATE planning SET invoiced=true WHERE id=$1`, [
+        row.planning_id,
+      ]);
+    }
+
+    res.json(result);
   } catch (err) {
-    console.error("❌ Yuki facturatie fout:", err.message);
+    console.error("❌ Fout:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
-router.get("/ping", async (_req, res) => {
+
+/** ✅ Route 2: Bulk facturatie per Tag */
+router.post("/tag", async (req, res) => {
   try {
-    const { client, sessionID } = await authenticateYuki();
-    console.log("✅ Verbonden met Yuki, sessionID:", sessionID);
-    res.json({ ok: true, sessionID: sessionID?.slice(0, 10) + "..." });
+    const { tag } = req.body;
+    if (!tag) return res.status(400).json({ error: "Tag is verplicht" });
+
+    const { rows } = await pool.query(
+      `SELECT 
+         c.id AS client_id, c.name, c.email, c.phone, c.address, c.house_number, c.postcode, c.city, c.type_klant, c.tag,
+         ct.id AS contract_id, ct.description, ct.price_inc, ct.vat_pct, ct.maandelijkse_facturatie,
+         p.id AS planning_id, p.date, p.status, p.invoiced
+       FROM planning p
+       JOIN contracts ct ON p.contract_id = ct.id
+       JOIN contacts c ON ct.contact_id = c.id
+       WHERE c.tag=$1
+         AND p.status NOT IN ('Geannuleerd','Gepland')
+         AND p.invoiced=false
+         AND (ct.maandelijkse_facturatie=false OR ct.maandelijkse_facturatie IS NULL)`,
+      [tag]
+    );
+
+    if (!rows.length)
+      return res.status(404).json({ error: "Geen planningen gevonden" });
+
+    const sessionId = await authenticateYuki();
+    const results = [];
+
+    for (const row of rows) {
+      try {
+        row.sessionId = sessionId;
+        const result = await sendInvoice(row);
+        results.push({ client: row.name, success: result.success, message: result.message });
+        if (result.success)
+          await pool.query(`UPDATE planning SET invoiced=true WHERE id=$1`, [
+            row.planning_id,
+          ]);
+      } catch (err) {
+        results.push({ client: row.name, success: false, message: err.message });
+      }
+    }
+
+    res.json({ total: results.length, results });
   } catch (err) {
-    console.error("❌ Ping fout:", err.message);
-    res.status(500).json({ ok: false, error: err.message });
+    console.error("❌ Fout bij bulk/tag:", err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
+/** ✅ Route 3: Bulk facturatie per Periode */
+router.post("/period", async (req, res) => {
+  try {
+    const { startDate, endDate } = req.body;
+    if (!startDate || !endDate)
+      return res
+        .status(400)
+        .json({ error: "startDate en endDate zijn verplicht" });
+
+    const { rows } = await pool.query(
+      `SELECT 
+         c.id AS client_id, c.name, c.email, c.phone, c.address, c.house_number, c.postcode, c.city, c.type_klant,
+         ct.id AS contract_id, ct.description, ct.price_inc, ct.vat_pct, ct.maandelijkse_facturatie,
+         p.id AS planning_id, p.date, p.status, p.invoiced
+       FROM planning p
+       JOIN contracts ct ON p.contract_id = ct.id
+       JOIN contacts c ON ct.contact_id = c.id
+       WHERE p.date BETWEEN $1 AND $2
+         AND p.status NOT IN ('Geannuleerd','Gepland')
+         AND p.invoiced=false
+         AND (ct.maandelijkse_facturatie=false OR ct.maandelijkse_facturatie IS NULL)
+       ORDER BY p.date`,
+      [startDate, endDate]
+    );
+
+    if (!rows.length)
+      return res.status(404).json({ error: "Geen planningen in deze periode" });
+
+    const sessionId = await authenticateYuki();
+    const results = [];
+
+    for (const row of rows) {
+      try {
+        row.sessionId = sessionId;
+        const result = await sendInvoice(row);
+        results.push({
+          client: row.name,
+          date: row.date,
+          success: result.success,
+          message: result.message,
+        });
+        if (result.success)
+          await pool.query(`UPDATE planning SET invoiced=true WHERE id=$1`, [
+            row.planning_id,
+          ]);
+      } catch (err) {
+        results.push({ client: row.name, success: false, message: err.message });
+      }
+    }
+
+    res.json({ total: results.length, results });
+  } catch (err) {
+    console.error("❌ Fout bij bulk/period:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 export default router;
