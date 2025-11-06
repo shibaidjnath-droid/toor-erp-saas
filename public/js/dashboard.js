@@ -1184,8 +1184,10 @@ function openPlanningDetail(p) {
         status: vals.status,
         comment: vals.comment || null,
         invoiced: !!vals.invoiced,
-        cancel_reason: vals.cancel_reason || null
       };
+      // ✅ alleen meesturen als echt nodig
+      if (vals.status === "Geannuleerd") {payload.cancel_reason = vals.cancel_reason || null;
+}
 
       const updateRes = await fetch(`/api/planning/${p.id}`, {
         method: "PUT",

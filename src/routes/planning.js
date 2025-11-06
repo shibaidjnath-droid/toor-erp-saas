@@ -8,7 +8,10 @@ import puppeteer from "puppeteer";
 import fs from "fs";
 import path from "path";
 
+
+
 const router = express.Router();
+
 
 /* ===========================================================
    🧭 Kalender-hulpfuncties (NL & EN labels ondersteund)
@@ -406,53 +409,6 @@ router.post("/share", async (req, res) => {
         end.setDate(0);
         break;
     }
-/** ✅ PUT /api/planning/:id */
-router.put("/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { date, memberId, status, comment, invoiced, cancel_reason } = req.body;
-
-    // Recordcontrole
-    const check = await pool.query("SELECT id FROM planning WHERE id = $1 LIMIT 1", [id]);
-    if (!check.rows.length) return res.status(404).json({ error: "Planning niet gevonden" });
-
-    // Querydelen opbouwen
-    const updates = [];
-    const params = [];
-    let i = 1;
-
-    if (date) {
-      const dt = new Date(date);
-      updates.push(`date = $${i++}`);
-      params.push(dt.toLocaleDateString("en-CA")); // lokale datum (geen -1)
-      updates.push(`week_number = $${i++}`);
-      params.push(getIsoWeekNumber(dt));
-    }
-    if (memberId) { updates.push(`member_id = $${i++}`); params.push(memberId); }
-    if (status) { updates.push(`status = $${i++}`); params.push(status); }
-    if (comment !== undefined) { updates.push(`comment = $${i++}`); params.push(comment); }
-    if (invoiced !== undefined) { updates.push(`invoiced = $${i++}`); params.push(invoiced); }
-    if (cancel_reason !== undefined) { updates.push(`cancel_reason = $${i++}`); params.push(cancel_reason); }
-
-    if (!updates.length) return res.status(400).json({ error: "Geen velden om bij te werken" });
-
-    // SQL correct opbouwen
-    const sql = `
-      UPDATE planning
-      SET ${updates.join(", ")}, updated_at = now()
-      WHERE id = $${i}
-      RETURNING *;
-    `;
-    params.push(id);
-
-    const { rows } = await pool.query(sql, params);
-    res.json(rows[0]);
-    console.log(`✅ Planning ${id} bijgewerkt`);
-  } catch (err) {
-    console.error("❌ Planning update error:", err);
-    res.status(500).json({ error: "Fout bij bijwerken planning" });
-  }
-});
 
     // 🗓️ Planning ophalen
     const { rows: planning } = await pool.query(`
@@ -555,6 +511,59 @@ router.put("/:id", async (req, res) => {
   } catch (err) {
     console.error("❌ Deel planning error:", err);
     res.status(500).json({ error: "Fout bij delen planning" });
+  }
+});
+/** ✅ PUT /api/planning/:id */
+router.put("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { date, memberId, status, comment, invoiced, cancel_reason } = req.body;
+
+    const check = await pool.query("SELECT id FROM planning WHERE id = $1 LIMIT 1", [id]);
+    if (!check.rows.length) return res.status(404).json({ error: "Planning niet gevonden" });
+
+    const updates = [];
+    const params = [];
+    let i = 1;
+
+    if (date) {
+      const dt = new Date(date);
+      updates.push(`date = $${i++}`);
+      params.push(dt.toLocaleDateString("en-CA"));
+      updates.push(`week_number = $${i++}`);
+      params.push(getIsoWeekNumber(dt));
+    }
+    if (memberId) { updates.push(`member_id = $${i++}`); params.push(memberId); }
+    if (status) { updates.push(`status = $${i++}`); params.push(status); }
+    if (comment !== undefined) { updates.push(`comment = $${i++}`); params.push(comment); }
+    if (invoiced !== undefined) { updates.push(`invoiced = $${i++}`); params.push(invoiced); }
+    //if (cancel_reason !== undefined) { updates.push(`cancel_reason = $${i++}`); params.push(cancel_reason); }
+    if (status === "Geannuleerd") {
+  // als de status op 'Geannuleerd' gezet is, update het veld met de opgegeven reden (kan leeg zijn)
+  updates.push(`cancel_reason = $${i++}`);
+  params.push(cancel_reason || null);
+} else if (cancel_reason && cancel_reason.trim() !== "") {
+  // alleen backend-processen (zoals client → inactive) sturen een niet-lege reden mee
+  updates.push(`cancel_reason = $${i++}`);
+  params.push(cancel_reason.trim());
+}
+
+    if (!updates.length) return res.status(400).json({ error: "Geen velden om bij te werken" });
+
+    const sql = `
+      UPDATE planning
+      SET ${updates.join(", ")}, updated_at = now()
+      WHERE id = $${i}
+      RETURNING *;
+    `;
+    params.push(id);
+
+    const { rows } = await pool.query(sql, params);
+    res.json(rows[0]);
+    console.log(`✅ Planning ${id} bijgewerkt`);
+  } catch (err) {
+    console.error("❌ Planning update error:", err);
+    res.status(500).json({ error: "Fout bij bijwerken planning" });
   }
 });
 export default router;
