@@ -23,57 +23,56 @@ async function authenticateYuki() {
 /** ✅ Helper: bouw XML voor 1 factuur */
 function buildInvoiceXML(client, contract, planning) {
   const builder = new XMLBuilder({ ignoreAttributes: false, format: true });
- const xml = builder.build({
-  ArrayOfSalesInvoice: {
-    "@_xmlns": "urn:xmlns:http://www.theyukicompany.com:salesinvoices",
-    SalesInvoice: {
-      Subject: `Factuur ${contract.type_service?.join(", ") || "Dienst"}`,
-      PaymentMethod: "ElectronicTransfer",
-      Process: "true",
-      EmailToCustomer: "true",
-      Date: new Date(planning.date).toISOString().split("T")[0],
-      DueDate: new Date(
-        new Date(planning.date).setDate(new Date(planning.date).getDate() + 30)
-      )
-        .toISOString()
-        .split("T")[0],
-      Currency: "EUR",
-      Contact: {
-  FullName:
-    client.type_klant === "Zakelijk"
-      ? client.bedrijfsnaam
-      : client.name,
-  Address: {
-    Street: `${client.address} ${client.house_number || ""}`.trim(),
-    Zipcode: client.postcode || "",
-    City: client.city || "",
-    CountryCode: "NL",
-  },
-  EmailAddress: client.email,
-  PhoneNumber: client.phone || "",
-  VATNumber: client.btw || "",
-  CoCNumber: client.kvk || "",
-  ContactType:
-    client.type_klant === "Zakelijk" ? "Organisation" : "Person",
-},
+  const xml = builder.build({
+    ArrayOfSalesInvoice: {
+      "@_xmlns": "urn:xmlns:http://www.theyukicompany.com:salesinvoices",
+      SalesInvoice: {
+        Subject: `Factuur ${contract.type_service?.join(", ") || "Dienst"}`,
+        PaymentMethod: "ElectronicTransfer",
+        Process: "true",
+        EmailToCustomer: "true",
+        Date: new Date(planning.date).toISOString().split("T")[0],
+        DueDate: new Date(
+          new Date(planning.date).setDate(new Date(planning.date).getDate() + 30)
+        )
+          .toISOString()
+          .split("T")[0],
+        Currency: "EUR",
 
-      InvoiceLines: {
-        InvoiceLine: {
-          Description:
-            contract.description ||
-            contract.type_service?.join(", ") ||
-            "Dienstverlening",
-          ProductQuantity: "1",
-          LineAmount: contract.price_inc || "0.00",
-          VATPercentage: contract.vat_pct || "21",
-          VATIncluded: "true",
-          GLAccountCode: "8400",
+        // ✅ YUKI verwacht <Customer> i.p.v. <Contact> en GEEN <Address>-node
+        Customer: {
+          FullName:
+            client.type_klant === "Zakelijk"
+              ? client.bedrijfsnaam
+              : client.name,
+          AddressLine_1: `${client.address} ${client.house_number || ""}`.trim(),
+          Zipcode: client.postcode || "",
+          City: client.city || "",
+          CountryCode: "NL",
+          EmailAddress: client.email,
+          PhoneNumber: client.phone || "",
+          VATNumber: client.btw || "",
+          CoCNumber: client.kvk || "",
+          CustomerType:
+            client.type_klant === "Zakelijk" ? "Organisation" : "Person",
+        },
+
+        InvoiceLines: {
+          InvoiceLine: {
+            Description:
+              contract.description ||
+              contract.type_service?.join(", ") ||
+              "Dienstverlening",
+            ProductQuantity: "1",
+            LineAmount: contract.price_inc || "0.00",
+            VATPercentage: contract.vat_pct || "21",
+            VATIncluded: "true",
+            GLAccountCode: "8400",
+          },
         },
       },
     },
-  },
-});
-
+  });
 
   return xml;
 }
