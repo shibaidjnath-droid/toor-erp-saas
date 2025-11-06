@@ -100,6 +100,7 @@ async function sendInvoiceToYuki(clientId, contractId, planningId) {
 
   // 3️⃣ XML opbouwen
   const xmlDoc = buildInvoiceXML(row, row, row);
+  console.log("🧾 XML naar Yuki:\n", xmlDoc);
 
   // 4️⃣ Call ProcessSalesInvoices
   const [result] = await yuki.ProcessSalesInvoicesAsync({
