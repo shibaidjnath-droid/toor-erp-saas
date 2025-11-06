@@ -82,6 +82,28 @@ function buildInvoiceXML(row) {
   </soap:Body>
 </soap:Envelope>`;
 }
+/** ✅ Log helper */
+async function logYukiResult(row, result) {
+  try {
+    await pool.query(
+      `INSERT INTO yuki_invoice_log 
+         (planning_id, client_name, email, amount, succeeded, message, xml_response)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        row.planning_id,
+        row.name || "Onbekend",
+        row.email || "",
+        row.price_inc || 0,
+        result.success,
+        result.message || "",
+        result.xml?.substring(0, 5000) || "", // beperk tot 5 KB
+      ]
+    );
+  } catch (err) {
+    console.error("⚠️ Kon log niet opslaan:", err.message);
+  }
+}
+
 
 /** ✅ Helper: verstuur één factuur */
 async function sendInvoice(row) {
@@ -135,6 +157,7 @@ router.post("/manual", async (req, res) => {
     row.sessionId = sessionId;
 
     const result = await sendInvoice(row);
+    await logYukiResult(row, result);
 
     if (result.success) {
       await pool.query(`UPDATE planning SET invoiced=true WHERE id=$1`, [
@@ -180,6 +203,7 @@ router.post("/tag", async (req, res) => {
       try {
         row.sessionId = sessionId;
         const result = await sendInvoice(row);
+        await logYukiResult(row, result);
         results.push({ client: row.name, success: result.success, message: result.message });
         if (result.success)
           await pool.query(`UPDATE planning SET invoiced=true WHERE id=$1`, [
@@ -232,6 +256,7 @@ router.post("/period", async (req, res) => {
       try {
         row.sessionId = sessionId;
         const result = await sendInvoice(row);
+        await logYukiResult(row, result);
         results.push({
           client: row.name,
           date: row.date,
