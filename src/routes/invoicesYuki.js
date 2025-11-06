@@ -38,22 +38,25 @@ function buildInvoiceXML(client, contract, planning) {
         .toISOString()
         .split("T")[0],
       Currency: "EUR",
-      Customer: {
+      Contact: {
   FullName:
     client.type_klant === "Zakelijk"
       ? client.bedrijfsnaam
       : client.name,
-  AddressLine_1: `${client.address} ${client.house_number || ""}`.trim(),
-  Zipcode: client.postcode || "",
-  City: client.city || "",
-  CountryCode: "NL",
+  Address: {
+    Street: `${client.address} ${client.house_number || ""}`.trim(),
+    Zipcode: client.postcode || "",
+    City: client.city || "",
+    CountryCode: "NL",
+  },
   EmailAddress: client.email,
   PhoneNumber: client.phone || "",
   VATNumber: client.btw || "",
   CoCNumber: client.kvk || "",
-  CustomerType:
+  ContactType:
     client.type_klant === "Zakelijk" ? "Organisation" : "Person",
 },
+
       InvoiceLines: {
         InvoiceLine: {
           Description:
@@ -102,6 +105,8 @@ async function sendInvoiceToYuki(clientId, contractId, planningId) {
   // 3️⃣ XML opbouwen
   const xmlDoc = buildInvoiceXML(row, row, row);
   console.log("🧾 XML naar Yuki:\n", xmlDoc);
+  console.log("🧾 XML naar Yuki:\n" + xml);
+  
 
   // 4️⃣ Call ProcessSalesInvoices
   const [result] = await yuki.ProcessSalesInvoicesAsync({
