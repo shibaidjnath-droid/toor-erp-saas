@@ -40,7 +40,7 @@ function buildInvoiceXML(client, contract, planning) {
         Currency: "EUR",
 
         // ✅ YUKI verwacht <Customer> i.p.v. <Contact> en GEEN <Address>-node
-        Contact: {
+        Customer: {
   FullName:
     client.type_klant === "Zakelijk"
       ? client.bedrijfsnaam
