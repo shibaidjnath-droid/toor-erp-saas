@@ -102,17 +102,25 @@ async function sendInvoiceToYuki(clientId, contractId, planningId) {
   // 2️⃣ Login bij Yuki
   const { client: yuki, sessionID } = await authenticateYuki();
 
-  // 3️⃣ XML opbouwen
- let xmlDoc = buildInvoiceXML(row, row, row);
-xmlDoc = xmlDoc.toString().trim();
-xmlDoc = '<?xml version="1.0" encoding="utf-8"?>\n' + xmlDoc;
+ // 3️⃣ XML opbouwen
+let xmlDoc = buildInvoiceXML(row, row, row);
+
+// voeg de XML-header toe
+xmlDoc = '<?xml version="1.0" encoding="utf-8"?>\n' + xmlDoc.toString().trim();
+
+// log wat we echt gaan sturen
 console.log("🧾 XML naar Yuki:\n", xmlDoc);
-  // 4️⃣ Call ProcessSalesInvoices
-  const [result] = await yuki.ProcessSalesInvoicesAsync({
-    sessionID,
-    administrationID: YUKI_ADMIN_ID,
-    xmlDoc: `<![CDATA[${xmlDoc}]]>` 
-  });
+
+// ✅ wrap de XML in CDATA zodat Yuki het als string ziet
+const xmlCDATA = `<![CDATA[${xmlDoc}]]>`;
+
+// 4️⃣ Call ProcessSalesInvoices
+const [result] = await yuki.ProcessSalesInvoicesAsync({
+  sessionID: sessionID,
+  administrationID: YUKI_ADMIN_ID,
+  xmlDoc: xmlCDATA,   // let op: kleine d, exact zo
+});
+
 
   const xmlResponse = result.ProcessSalesInvoicesResult;
 
