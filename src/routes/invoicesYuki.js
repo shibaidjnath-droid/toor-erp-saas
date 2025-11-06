@@ -38,22 +38,22 @@ function buildInvoiceXML(client, contract, planning) {
         .toISOString()
         .split("T")[0],
       Currency: "EUR",
-      Contact: {
-        FullName:
-          client.type_klant === "Zakelijk"
-            ? client.bedrijfsnaam
-            : client.name,
-        AddressLine_1: `${client.address} ${client.house_number || ""}`.trim(),
-        Zipcode: client.postcode || "",
-        City: client.city || "",
-        CountryCode: "NL",
-        EmailAddress: client.email,
-        PhoneNumber: client.phone || "",
-        VATNumber: client.btw || "",
-        CoCNumber: client.kvk || "",
-        ContactType:
-          client.type_klant === "Zakelijk" ? "Organisation" : "Person",
-      },
+      Customer: {
+  FullName:
+    client.type_klant === "Zakelijk"
+      ? client.bedrijfsnaam
+      : client.name,
+  AddressLine_1: `${client.address} ${client.house_number || ""}`.trim(),
+  Zipcode: client.postcode || "",
+  City: client.city || "",
+  CountryCode: "NL",
+  EmailAddress: client.email,
+  PhoneNumber: client.phone || "",
+  VATNumber: client.btw || "",
+  CoCNumber: client.kvk || "",
+  CustomerType:
+    client.type_klant === "Zakelijk" ? "Organisation" : "Person",
+},
       InvoiceLines: {
         InvoiceLine: {
           Description:
