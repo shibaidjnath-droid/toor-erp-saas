@@ -85,6 +85,7 @@ function buildInvoiceXML(row) {
 </soap:Envelope>`;
 }
 
+
 // ✅ Logging in database
 async function logYukiResult(row, result) {
   try {
