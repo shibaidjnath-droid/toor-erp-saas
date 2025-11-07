@@ -2,14 +2,21 @@
 import express from "express";
 import { pool } from "../db.js";
 import axios from "axios";
-import { XMLBuilder } from "fast-xml-parser";
 
 const router = express.Router();
 
-// 🔐 Config
+// 🔐 Configuratie
 const YUKI_BASE = "https://oamkb-compleet.yukiworks.nl/ws/Sales.asmx";
 const YUKI_ACCESS_KEY = "f954f4dc-00dc-443d-aa3a-991de5118fab";
-const YUKI_ADMIN_ID = "72314c09-dbac-4b0d-9b21-b49498553b4a"; // jouw administratie-id
+const YUKI_ADMIN_ID = "72314c09-dbac-4b0d-9b21-b49498553b4a";
+
+// 🧠 BTW-type mapping
+function getVATType(vatPct) {
+  const pct = parseFloat(vatPct);
+  if (pct >= 20) return 1; // Hoog tarief
+  if (pct >= 8 && pct < 10) return 2; // Laag tarief
+  return 3; // Vrijgesteld/verlegd
+}
 
 /** ✅ Authenticate bij Yuki */
 async function authenticateYuki() {
@@ -23,53 +30,13 @@ async function authenticateYuki() {
   return sessionId;
 }
 
-/** ✅ Bouw XML voor een factuur */
+/** ✅ Bouw bewezen werkende XML-body */
 function buildInvoiceXML(row) {
-  const builder = new XMLBuilder({ ignoreAttributes: false, format: true });
-  const salesInvoiceXML = builder.build({
-    SalesInvoices: {
-      "@_xmlns": "urn:xmlns:http://www.theyukicompany.com:salesinvoices",
-      SalesInvoice: {
-        Subject: `Factuur ${row.description || "Dienst"}`,
-        PaymentMethod: "ElectronicTransfer",
-        Process: true,
-        EmailToCustomer: true,
-        Date: new Date(row.date).toISOString().split("T")[0],
-        DueDate: new Date(
-          new Date(row.date).setDate(new Date(row.date).getDate() + 30)
-        )
-          .toISOString()
-          .split("T")[0],
-        Currency: "EUR",
-        Contact: {
-          FullName: row.name || row.bedrijfsnaam || "Onbekend",
-          CountryCode: "NL",
-          City: row.city || "",
-          AddressLine_1: `${row.address || ""} ${row.house_number || ""} ${
-            row.postcode || ""
-          }`,
-          EmailAddress: row.email || "",
-          PhoneHome: row.phone || "",
-        },
-        InvoiceLines: {
-  InvoiceLine: {
-    Description: row.description || "Dienstverlening",
-    ProductQuantity: 1,
-    LineAmount: ((row.price_inc || 0) / (1 + (row.vat_pct || 21) / 100)).toFixed(2), // excl. btw
-    Product: {
-      Description: row.description || "Dienst",
-      SalesPrice: ((row.price_inc || 0) / (1 + (row.vat_pct || 21) / 100)).toFixed(2),
-      VATPercentage: row.vat_pct || "21.00",
-      VATIncluded: false, // 💡 expliciet vermelden
-      VATType: 1, // 1 = Hoog tarief
-      GLAccountCode: "8000",
-    },
-  },
-},
-
-      },
-    },
-  });
+  const vatType = getVATType(row.vat_pct);
+  const date = new Date(row.date || new Date()).toISOString().split("T")[0];
+  const dueDate = new Date(new Date(date).setMonth(new Date(date).getMonth() + 1))
+    .toISOString()
+    .split("T")[0];
 
   return `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -79,11 +46,45 @@ function buildInvoiceXML(row) {
     <ProcessSalesInvoices xmlns="http://www.theyukicompany.com/">
       <sessionId>${row.sessionId}</sessionId>
       <administrationId>${YUKI_ADMIN_ID}</administrationId>
-      <xmlDoc>${salesInvoiceXML}</xmlDoc>
+      <xmlDoc>
+        <SalesInvoices xmlns="urn:xmlns:http://www.theyukicompany.com:salesinvoices">
+          <SalesInvoice>
+            <Subject>${row.description || "Factuur"}</Subject>
+            <PaymentMethod>ElectronicTransfer</PaymentMethod>
+            <Process>true</Process>
+            <EmailToCustomer>true</EmailToCustomer>
+            <Date>${date}</Date>
+            <DueDate>${dueDate}</DueDate>
+            <Currency>EUR</Currency>
+            <Contact>
+              <FullName>${row.bedrijfsnaam || row.name}</FullName>
+              <AddressLine_1>${row.address || ""} ${row.house_number || ""}, ${row.postcode || ""} ${row.city || ""}</AddressLine_1>
+              <EmailAddress>${row.email || ""}</EmailAddress>
+              <PhoneHome>${row.phone || ""}</PhoneHome>
+              <DefaultSendingMethod>Email</DefaultSendingMethod>
+            </Contact>
+            <InvoiceLines>
+              <InvoiceLine>
+                <Description>${row.description || "Dienst"}</Description>
+                <ProductQuantity>1</ProductQuantity>
+                <LineAmount>${row.price_inc || "0.00"}</LineAmount>
+                <Product>
+                  <Description>${row.description || "Dienst"}</Description>
+                  <SalesPrice>${row.price_inc || "0.00"}</SalesPrice>
+                  <VATPercentage>${row.vat_pct || "21.00"}</VATPercentage>
+                  <VATType>${vatType}</VATType>
+                  <GLAccountCode>8000</GLAccountCode>
+                </Product>
+              </InvoiceLine>
+            </InvoiceLines>
+          </SalesInvoice>
+        </SalesInvoices>
+      </xmlDoc>
     </ProcessSalesInvoices>
   </soap:Body>
 </soap:Envelope>`;
 }
+
 /** ✅ Log helper */
 async function logYukiResult(row, result) {
   try {
@@ -98,7 +99,7 @@ async function logYukiResult(row, result) {
         row.price_inc || 0,
         result.success,
         result.message || "",
-        result.xml?.substring(0, 5000) || "", // beperk tot 5 KB
+        result.xml?.substring(0, 5000) || "",
       ]
     );
   } catch (err) {
@@ -106,8 +107,7 @@ async function logYukiResult(row, result) {
   }
 }
 
-
-/** ✅ Helper: verstuur één factuur */
+/** ✅ Helper: verstuur één factuur naar Yuki */
 async function sendInvoice(row) {
   const xmlBody = buildInvoiceXML(row);
   const res = await axios.post(YUKI_BASE, xmlBody, {
@@ -118,7 +118,7 @@ async function sendInvoice(row) {
   });
 
   const xml = res.data;
-  const succeeded = xml.includes("<Succeeded>true</Succeeded>");
+  const succeeded = xml.includes("<TotalSucceeded>1</TotalSucceeded>");
   const message =
     xml.match(/<Message>(.*?)<\/Message>/)?.[1] ||
     (succeeded ? "OK" : "Onbekende fout");
@@ -131,9 +131,7 @@ router.post("/manual", async (req, res) => {
   try {
     const { clientId, contractId, planningId } = req.body;
     if (!clientId || !contractId || !planningId)
-      return res
-        .status(400)
-        .json({ error: "clientId, contractId en planningId zijn verplicht" });
+      return res.status(400).json({ error: "clientId, contractId en planningId zijn verplicht" });
 
     const { rows } = await pool.query(
       `SELECT 
@@ -162,9 +160,7 @@ router.post("/manual", async (req, res) => {
     await logYukiResult(row, result);
 
     if (result.success) {
-      await pool.query(`UPDATE planning SET invoiced=true WHERE id=$1`, [
-        row.planning_id,
-      ]);
+      await pool.query(`UPDATE planning SET invoiced=true WHERE id=$1`, [row.planning_id]);
     }
 
     res.json(result);
@@ -208,9 +204,7 @@ router.post("/tag", async (req, res) => {
         await logYukiResult(row, result);
         results.push({ client: row.name, success: result.success, message: result.message });
         if (result.success)
-          await pool.query(`UPDATE planning SET invoiced=true WHERE id=$1`, [
-            row.planning_id,
-          ]);
+          await pool.query(`UPDATE planning SET invoiced=true WHERE id=$1`, [row.planning_id]);
       } catch (err) {
         results.push({ client: row.name, success: false, message: err.message });
       }
@@ -228,9 +222,7 @@ router.post("/period", async (req, res) => {
   try {
     const { startDate, endDate } = req.body;
     if (!startDate || !endDate)
-      return res
-        .status(400)
-        .json({ error: "startDate en endDate zijn verplicht" });
+      return res.status(400).json({ error: "startDate en endDate zijn verplicht" });
 
     const { rows } = await pool.query(
       `SELECT 
@@ -266,9 +258,7 @@ router.post("/period", async (req, res) => {
           message: result.message,
         });
         if (result.success)
-          await pool.query(`UPDATE planning SET invoiced=true WHERE id=$1`, [
-            row.planning_id,
-          ]);
+          await pool.query(`UPDATE planning SET invoiced=true WHERE id=$1`, [row.planning_id]);
       } catch (err) {
         results.push({ client: row.name, success: false, message: err.message });
       }
