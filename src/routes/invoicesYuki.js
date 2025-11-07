@@ -5,20 +5,20 @@ import axios from "axios";
 
 const router = express.Router();
 
-// 🔐 Configuratie
+// 🔐 Config
 const YUKI_BASE = "https://oamkb-compleet.yukiworks.nl/ws/Sales.asmx";
 const YUKI_ACCESS_KEY = "f954f4dc-00dc-443d-aa3a-991de5118fab";
 const YUKI_ADMIN_ID = "72314c09-dbac-4b0d-9b21-b49498553b4a";
 
-// 🧠 BTW-type mapping
+// 🧮 BTW-type mapping
 function getVATType(vatPct) {
   const pct = parseFloat(vatPct);
-  if (pct >= 20) return 1; // Hoog tarief
-  if (pct >= 8 && pct < 10) return 2; // Laag tarief
-  return 3; // Vrijgesteld/verlegd
+  if (pct >= 20) return 1;
+  if (pct >= 8 && pct < 10) return 2;
+  return 3;
 }
 
-/** ✅ Authenticate bij Yuki */
+// ✅ Authenticate bij Yuki
 async function authenticateYuki() {
   const res = await axios.post(
     `${YUKI_BASE}/Authenticate`,
@@ -30,7 +30,7 @@ async function authenticateYuki() {
   return sessionId;
 }
 
-/** ✅ Bouw bewezen werkende XML-body */
+// ✅ XML-builder (universeel, particulier + zakelijk)
 function buildInvoiceXML(row) {
   const vatType = getVATType(row.vat_pct);
   const date = new Date(row.date || new Date()).toISOString().split("T")[0];
@@ -85,7 +85,7 @@ function buildInvoiceXML(row) {
 </soap:Envelope>`;
 }
 
-/** ✅ Log helper */
+// ✅ Logging in database
 async function logYukiResult(row, result) {
   try {
     await pool.query(
@@ -107,7 +107,7 @@ async function logYukiResult(row, result) {
   }
 }
 
-/** ✅ Helper: verstuur één factuur naar Yuki */
+// ✅ Verstuur één factuur
 async function sendInvoice(row) {
   const xmlBody = buildInvoiceXML(row);
   const res = await axios.post(YUKI_BASE, xmlBody, {
@@ -118,15 +118,24 @@ async function sendInvoice(row) {
   });
 
   const xml = res.data;
-  const succeeded = xml.includes("<TotalSucceeded>1</TotalSucceeded>");
-  const message =
-    xml.match(/<Message>(.*?)<\/Message>/)?.[1] ||
-    (succeeded ? "OK" : "Onbekende fout");
+  const success = xml.includes("<TotalSucceeded>1</TotalSucceeded>");
+  const message = xml.match(/<Message>(.*?)<\/Message>/)?.[1] || (success ? "OK" : "Onbekende fout");
 
-  return { success: succeeded, message, xml };
+  return { success, message, xml };
 }
 
-/** ✅ Route 1: Enkelvoudige factuur (Factureer een klant) */
+function formatResult(row, result) {
+  return {
+    client: row.name || row.bedrijfsnaam || "Onbekend",
+    date: row.date,
+    email: row.email,
+    amount: row.price_inc,
+    success: result.success,
+    message: result.message,
+  };
+}
+
+/** ✅ Route 1: Enkelvoudige factuur */
 router.post("/manual", async (req, res) => {
   try {
     const { clientId, contractId, planningId } = req.body;
@@ -159,11 +168,13 @@ router.post("/manual", async (req, res) => {
     const result = await sendInvoice(row);
     await logYukiResult(row, result);
 
-    if (result.success) {
+    if (result.success)
       await pool.query(`UPDATE planning SET invoiced=true WHERE id=$1`, [row.planning_id]);
-    }
 
-    res.json(result);
+    return res.json({
+      summary: "1 factuur verwerkt",
+      results: [formatResult(row, result)],
+    });
   } catch (err) {
     console.error("❌ Fout:", err.message);
     res.status(500).json({ error: err.message });
@@ -202,7 +213,7 @@ router.post("/tag", async (req, res) => {
         row.sessionId = sessionId;
         const result = await sendInvoice(row);
         await logYukiResult(row, result);
-        results.push({ client: row.name, success: result.success, message: result.message });
+        results.push(formatResult(row, result));
         if (result.success)
           await pool.query(`UPDATE planning SET invoiced=true WHERE id=$1`, [row.planning_id]);
       } catch (err) {
@@ -210,7 +221,11 @@ router.post("/tag", async (req, res) => {
       }
     }
 
-    res.json({ total: results.length, results });
+    const succeeded = results.filter(r => r.success).length;
+    return res.json({
+      summary: `${results.length} facturen verwerkt, ${succeeded} succesvol`,
+      results,
+    });
   } catch (err) {
     console.error("❌ Fout bij bulk/tag:", err.message);
     res.status(500).json({ error: err.message });
@@ -251,12 +266,7 @@ router.post("/period", async (req, res) => {
         row.sessionId = sessionId;
         const result = await sendInvoice(row);
         await logYukiResult(row, result);
-        results.push({
-          client: row.name,
-          date: row.date,
-          success: result.success,
-          message: result.message,
-        });
+        results.push(formatResult(row, result));
         if (result.success)
           await pool.query(`UPDATE planning SET invoiced=true WHERE id=$1`, [row.planning_id]);
       } catch (err) {
@@ -264,7 +274,11 @@ router.post("/period", async (req, res) => {
       }
     }
 
-    res.json({ total: results.length, results });
+    const succeeded = results.filter(r => r.success).length;
+    return res.json({
+      summary: `${results.length} facturen verwerkt, ${succeeded} succesvol`,
+      results,
+    });
   } catch (err) {
     console.error("❌ Fout bij bulk/period:", err.message);
     res.status(500).json({ error: err.message });
