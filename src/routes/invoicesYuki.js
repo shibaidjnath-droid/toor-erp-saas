@@ -61,7 +61,7 @@ function buildInvoiceXML(row) {
       SalesPrice: ((row.price_inc || 0) / (1 + (row.vat_pct || 21) / 100)).toFixed(2),
       VATPercentage: row.vat_pct || "21.00",
       VATIncluded: false, // 💡 expliciet vermelden
-      VATType: 2, // 2 = Hoog tarief
+      VATType: 1, // 1 = Hoog tarief
       GLAccountCode: "8000",
     },
   },
