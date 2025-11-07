@@ -138,6 +138,7 @@ function formatResult(row, result) {
 /** ✅ Route 1: Enkelvoudige factuur */
 router.post("/manual", async (req, res) => {
   try {
+    console.log("📥 Ontvangen body:", req.body);
     const { clientId, contractId, planningId } = req.body;
     if (!clientId || !contractId || !planningId)
       return res.status(400).json({ error: "clientId, contractId en planningId zijn verplicht" });
@@ -157,7 +158,7 @@ router.post("/manual", async (req, res) => {
        LIMIT 1`,
       [clientId, contractId, planningId]
     );
-
+    console.log("📊 Query resultaat:", rows);
     if (!rows.length)
       return res.status(404).json({ error: "Geen geschikt record gevonden" });
 
