@@ -60,7 +60,7 @@ function buildInvoiceXML(row) {
               Description: row.description || "Dienst",
               SalesPrice: row.price_inc || "0.00",
               VATPercentage: row.vat_pct || "21.00",
-              VATType: 1,
+              VATType: 2, // 2 = Hoog
               GLAccountCode: "8000",
             },
           },
