@@ -111,6 +111,7 @@ async function logYukiResult(row, result) {
 // ✅ Verstuur één factuur
 async function sendInvoice(row) {
   const xmlBody = buildInvoiceXML(row);
+  console.log("📦 XML die naar Yuki wordt gestuurd:\n", xmlBody);
   const res = await axios.post(YUKI_BASE, xmlBody, {
     headers: {
       "Content-Type": "text/xml; charset=utf-8",
