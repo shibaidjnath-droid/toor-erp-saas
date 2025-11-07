@@ -52,19 +52,21 @@ function buildInvoiceXML(row) {
           PhoneHome: row.phone || "",
         },
         InvoiceLines: {
-          InvoiceLine: {
-            Description: row.description || "Dienstverlening",
-            ProductQuantity: 1,
-            LineAmount: row.price_inc || "0.00",
-            Product: {
-              Description: row.description || "Dienst",
-              SalesPrice: row.price_inc || "0.00",
-              VATPercentage: row.vat_pct || "21.00",
-              VATType: 2, // 2 = Hoog
-              GLAccountCode: "8000",
-            },
-          },
-        },
+  InvoiceLine: {
+    Description: row.description || "Dienstverlening",
+    ProductQuantity: 1,
+    LineAmount: ((row.price_inc || 0) / (1 + (row.vat_pct || 21) / 100)).toFixed(2), // excl. btw
+    Product: {
+      Description: row.description || "Dienst",
+      SalesPrice: ((row.price_inc || 0) / (1 + (row.vat_pct || 21) / 100)).toFixed(2),
+      VATPercentage: row.vat_pct || "21.00",
+      VATIncluded: false, // 💡 expliciet vermelden
+      VATType: 2, // 2 = Hoog tarief
+      GLAccountCode: "8000",
+    },
+  },
+},
+
       },
     },
   });
