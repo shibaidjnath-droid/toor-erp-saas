@@ -7,7 +7,7 @@ import { XMLBuilder } from "fast-xml-parser";
 const router = express.Router();
 
 // 🔐 Config
-const YUKI_BASE = "https://api.yukiworks.nl/ws/Sales.asmx";
+const YUKI_BASE = "https://oamkb-compleet.yukiworks.nl/ws/Sales.asmx";
 const YUKI_ACCESS_KEY = "f954f4dc-00dc-443d-aa3a-991de5118fab";
 const YUKI_ADMIN_ID = "72314c09-dbac-4b0d-9b21-b49498553b4a"; // jouw administratie-id
 
