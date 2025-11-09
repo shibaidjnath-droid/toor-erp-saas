@@ -108,12 +108,11 @@ async function logYukiResult(row, result) {
   }
 }
 
-// ✅ Verstuur één factuur
+// ✅ Verstuur één factuur (debugversie)
 async function sendInvoice(row) {
   const xmlBody = buildInvoiceXML(row);
 
-  // 🔍 verkort log zodat Render het toont
-  console.log("📦 XML sample →", xmlBody.substring(0, 1000) + "...[ingekort]");
+  console.log("📦 XML sample (eerste 600 chars):\n", xmlBody.substring(0, 600) + "...[ingekort]");
 
   try {
     const res = await axios.post(YUKI_BASE, xmlBody, {
@@ -121,7 +120,12 @@ async function sendInvoice(row) {
         "Content-Type": "text/xml; charset=utf-8",
         SOAPAction: '"http://www.theyukicompany.com/ProcessSalesInvoices"',
       },
+      timeout: 20000,
+      validateStatus: () => true, // 💡 zodat 500-responses niet als throw komen
     });
+
+    console.log("📩 Yuki HTTP status:", res.status);
+    console.log("📨 Yuki response (eerste 1000 chars):\n", String(res.data).substring(0, 1000));
 
     const xml = res.data;
     const succeeded = xml.includes("<Succeeded>true</Succeeded>");
@@ -131,10 +135,13 @@ async function sendInvoice(row) {
 
     return { success: succeeded, message, xml };
   } catch (err) {
-    console.error("⚠️ Axios/Yuki fout:", err.response?.data || err.message);
+    console.error("⚠️ Volledige axios fout:", err.message);
+    if (err.response)
+      console.error("⚠️ Response body:", String(err.response.data).substring(0, 1000));
     throw err;
   }
 }
+
 
 function formatResult(row, result) {
   return {
