@@ -111,19 +111,29 @@ async function logYukiResult(row, result) {
 // ✅ Verstuur één factuur
 async function sendInvoice(row) {
   const xmlBody = buildInvoiceXML(row);
-  console.log("📦 XML die naar Yuki wordt gestuurd:\n", xmlBody);
-  const res = await axios.post(YUKI_BASE, xmlBody, {
-    headers: {
-      "Content-Type": "text/xml; charset=utf-8",
-      SOAPAction: '"http://www.theyukicompany.com/ProcessSalesInvoices"',
-    },
-  });
 
-  const xml = res.data;
-  const success = xml.includes("<TotalSucceeded>1</TotalSucceeded>");
-  const message = xml.match(/<Message>(.*?)<\/Message>/)?.[1] || (success ? "OK" : "Onbekende fout");
+  // 🔍 verkort log zodat Render het toont
+  console.log("📦 XML sample →", xmlBody.substring(0, 1000) + "...[ingekort]");
 
-  return { success, message, xml };
+  try {
+    const res = await axios.post(YUKI_BASE, xmlBody, {
+      headers: {
+        "Content-Type": "text/xml; charset=utf-8",
+        SOAPAction: '"http://www.theyukicompany.com/ProcessSalesInvoices"',
+      },
+    });
+
+    const xml = res.data;
+    const succeeded = xml.includes("<Succeeded>true</Succeeded>");
+    const message =
+      xml.match(/<Message>(.*?)<\/Message>/)?.[1] ||
+      (succeeded ? "OK" : "Onbekende fout");
+
+    return { success: succeeded, message, xml };
+  } catch (err) {
+    console.error("⚠️ Axios/Yuki fout:", err.response?.data || err.message);
+    throw err;
+  }
 }
 
 function formatResult(row, result) {
