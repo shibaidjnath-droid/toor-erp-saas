@@ -2,13 +2,15 @@
 import express from "express";
 import { pool } from "../db.js";
 import axios from "axios";
+import dotenv from "dotenv";
+dotenv.config();
 
 const router = express.Router();
 
 // 🔐 Config
 const YUKI_BASE = "https://oamkb-compleet.yukiworks.nl/ws/Sales.asmx";
-const YUKI_ACCESS_KEY = "f954f4dc-00dc-443d-aa3a-991de5118fab";
-const YUKI_ADMIN_ID = "72314c09-dbac-4b0d-9b21-b49498553b4a";
+const YUKI_ACCESS_KEY = process.env.YUKI_ACCESS_KEY;
+const YUKI_ADMIN_ID = process.env.YUKI_ADMIN_ID;
 
 // 🧮 BTW-type mapping
 function getVATType(vatPct) {
@@ -18,19 +20,51 @@ function getVATType(vatPct) {
   return 3;
 }
 
-// ✅ Authenticate bij Yuki
+/* =========================================================
+   🔑 Authenticate bij Yuki (SOAP)
+   ========================================================= */
 async function authenticateYuki() {
-  const res = await axios.post(
-    `${YUKI_BASE}/Authenticate`,
-    `accessKey=${YUKI_ACCESS_KEY}`,
-    { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
-  );
-  const sessionId = res.data.match(/<string.*?>(.*?)<\/string>/)?.[1];
-  if (!sessionId) throw new Error("Geen sessionID ontvangen van Yuki");
-  return sessionId;
+  const soapBody = `<?xml version="1.0" encoding="utf-8"?>
+  <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                 xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                 xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+    <soap:Body>
+      <Authenticate xmlns="http://www.theyukicompany.com/">
+        <accessKey>${YUKI_ACCESS_KEY}</accessKey>
+      </Authenticate>
+    </soap:Body>
+  </soap:Envelope>`;
+
+  try {
+    const res = await axios.post(YUKI_BASE, soapBody, {
+      headers: {
+        "Content-Type": "text/xml; charset=utf-8",
+        SOAPAction: '"http://www.theyukicompany.com/Authenticate"',
+      },
+      timeout: 20000,
+      validateStatus: () => true,
+    });
+
+    const xml = String(res.data);
+    const sessionId = xml.match(/<AuthenticateResult>(.*?)<\/AuthenticateResult>/)?.[1]
+      || xml.match(/<string.*?>(.*?)<\/string>/)?.[1];
+
+    if (!sessionId) {
+      console.error("❌ Geen sessionId ontvangen van Yuki. Response:\n", xml.substring(0, 800));
+      throw new Error("Geen geldig sessionId ontvangen van Yuki");
+    }
+
+    console.log("✅ Session ID ontvangen:", sessionId);
+    return sessionId;
+  } catch (err) {
+    console.error("❌ Fout bij Authenticate Yuki:", err.message);
+    throw err;
+  }
 }
 
-// ✅ XML-builder (universeel, particulier + zakelijk)
+/* =========================================================
+   🧾 XML-builder voor ProcessSalesInvoices
+   ========================================================= */
 function buildInvoiceXML(row) {
   const vatType = getVATType(row.vat_pct);
   const date = new Date(row.date || new Date()).toISOString().split("T")[0];
@@ -85,8 +119,9 @@ function buildInvoiceXML(row) {
 </soap:Envelope>`;
 }
 
-
-// ✅ Logging in database
+/* =========================================================
+   🪵 Logging
+   ========================================================= */
 async function logYukiResult(row, result) {
   try {
     await pool.query(
@@ -108,30 +143,29 @@ async function logYukiResult(row, result) {
   }
 }
 
-// ✅ Verstuur één factuur (debugversie)
+/* =========================================================
+   🚀 Verstuur één factuur naar Yuki
+   ========================================================= */
 async function sendInvoice(row) {
   const xmlBody = buildInvoiceXML(row);
 
-  // 🧾 Volledige XML tonen in de logs
-  console.log("🧾 --- VOLLEDIGE XML DIE NAAR YUKI GAAT ---");
+  console.log("🧾 --- XML naar Yuki ---");
   console.log(xmlBody);
   console.log("🧾 --- EINDE XML ---");
 
-  // 🚀 Stuur request naar Yuki
   const res = await axios.post(YUKI_BASE, xmlBody, {
     headers: {
       "Content-Type": "text/xml; charset=utf-8",
       SOAPAction: '"http://www.theyukicompany.com/ProcessSalesInvoices"',
     },
-    timeout: 20000, // extra veiligheid
-    validateStatus: () => true, // zodat ook 500 logs doorkomen
+    timeout: 20000,
+    validateStatus: () => true,
   });
 
-  // 📬 Log Yuki-response
+  const xml = String(res.data);
   console.log("📩 Yuki status:", res.status);
-  console.log("📨 Yuki response (eerste 1000 chars):\n", String(res.data).substring(0, 1000));
+  console.log("📨 Response (eerste 1000 tekens):", xml.substring(0, 1000));
 
-  const xml = res.data;
   const succeeded = xml.includes("<Succeeded>true</Succeeded>");
   const message =
     xml.match(/<Message>(.*?)<\/Message>/)?.[1] ||
@@ -139,8 +173,6 @@ async function sendInvoice(row) {
 
   return { success: succeeded, message, xml };
 }
-
-
 
 function formatResult(row, result) {
   return {
@@ -153,7 +185,9 @@ function formatResult(row, result) {
   };
 }
 
-/** ✅ Route 1: Enkelvoudige factuur */
+/* =========================================================
+   ✅ Route 1: Enkelvoudige factuur
+   ========================================================= */
 router.post("/manual", async (req, res) => {
   try {
     console.log("📥 Ontvangen body:", req.body);
@@ -176,7 +210,6 @@ router.post("/manual", async (req, res) => {
        LIMIT 1`,
       [clientId, contractId, planningId]
     );
-    console.log("📊 Query resultaat:", rows);
     if (!rows.length)
       return res.status(404).json({ error: "Geen geschikt record gevonden" });
 
@@ -200,7 +233,9 @@ router.post("/manual", async (req, res) => {
   }
 });
 
-/** ✅ Route 2: Bulk facturatie per Tag */
+/* =========================================================
+   ✅ Route 2: Bulk facturatie per Tag
+   ========================================================= */
 router.post("/tag", async (req, res) => {
   try {
     const { tag } = req.body;
@@ -251,7 +286,9 @@ router.post("/tag", async (req, res) => {
   }
 });
 
-/** ✅ Route 3: Bulk facturatie per Periode */
+/* =========================================================
+   ✅ Route 3: Bulk facturatie per Periode
+   ========================================================= */
 router.post("/period", async (req, res) => {
   try {
     const { startDate, endDate } = req.body;
