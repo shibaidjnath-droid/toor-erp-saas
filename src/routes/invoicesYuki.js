@@ -72,6 +72,12 @@ function buildInvoiceXML(row) {
     .toISOString()
     .split("T")[0];
 
+  // contactgegevens voor Yuki
+  const contactType =
+    row.type_klant && row.type_klant.toLowerCase().includes("zak")
+      ? "Company"
+      : "Person";
+
   return `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                xmlns:xsd="http://www.w3.org/2001/XMLSchema"
@@ -91,12 +97,20 @@ function buildInvoiceXML(row) {
             <DueDate>${dueDate}</DueDate>
             <Currency>EUR</Currency>
             <Contact>
-              ${row.type_klant === 'Zakelijk'
-              ? `<CompanyName>${row.name}</CompanyName>`
-              : `<FullName>${row.name}</FullName>`}
-              <AddressLine_1>${row.address || ""} ${row.house_number || ""}, ${row.postcode || ""} ${row.city || ""}</AddressLine_1>
-              <EmailAddress>${row.email || ""}</EmailAddress>
-              <PhoneHome>${row.phone || ""}</PhoneHome>
+              <FullName>${row.name || "Onbekende klant"}</FullName>
+              ${row.kvk ? `<CoCNumber>${row.kvk}</CoCNumber>` : ""}
+              ${row.btw ? `<VATNumber>${row.btw}</VATNumber>` : ""}
+              <ContactType>${contactType}</ContactType>
+              ${row.country ? `<CountryCode>${row.country}</CountryCode>` : ""}
+              ${row.city ? `<City>${row.city}</City>` : ""}
+              ${row.postcode ? `<Zipcode>${row.postcode}</Zipcode>` : ""}
+              ${row.address || row.house_number
+                ? `<AddressLine_1>${[row.address, row.house_number]
+                    .filter(Boolean)
+                    .join(" ")}</AddressLine_1>`
+                : ""}
+              ${row.email ? `<EmailAddress>${row.email}</EmailAddress>` : ""}
+              ${row.phone ? `<PhoneHome>${row.phone}</PhoneHome>` : ""}
               <DefaultSendingMethod>Email</DefaultSendingMethod>
             </Contact>
             <InvoiceLines>
@@ -120,6 +134,7 @@ function buildInvoiceXML(row) {
   </soap:Body>
 </soap:Envelope>`;
 }
+
 
 /* =========================================================
    🪵 Logging
