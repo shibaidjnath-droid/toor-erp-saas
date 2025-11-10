@@ -91,7 +91,9 @@ function buildInvoiceXML(row) {
             <DueDate>${dueDate}</DueDate>
             <Currency>EUR</Currency>
             <Contact>
-              <FullName>${row.bedrijfsnaam || row.name}</FullName>
+              ${row.type_klant === 'Zakelijk'
+              ? `<CompanyName>${row.name}</CompanyName>`
+              : `<FullName>${row.name}</FullName>`}
               <AddressLine_1>${row.address || ""} ${row.house_number || ""}, ${row.postcode || ""} ${row.city || ""}</AddressLine_1>
               <EmailAddress>${row.email || ""}</EmailAddress>
               <PhoneHome>${row.phone || ""}</PhoneHome>
