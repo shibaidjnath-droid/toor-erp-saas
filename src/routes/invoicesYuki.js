@@ -8,7 +8,7 @@ dotenv.config();
 const router = express.Router();
 
 // 🔐 Config
-const YUKI_BASE = "https://oamkb-compleet.yukiworks.nl/ws/Sales.asmx";
+const YUKI_BASE = "https://api.yukiworks.nl/ws/Sales.asmx";
 const YUKI_ACCESS_KEY = process.env.YUKI_ACCESS_KEY;
 const YUKI_ADMIN_ID = process.env.YUKI_ADMIN_ID;
 
