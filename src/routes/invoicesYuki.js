@@ -8,7 +8,7 @@ dotenv.config();
 const router = express.Router();
 
 // 🔐 Config
-const YUKI_BASE = "https://api.yukiworks.nl/ws/Sales.asmx";
+const YUKI_BASE = process.env.YUKI_BASE || "https://oamkb-compleet.yukiworks.nl/ws/Sales.asmx";
 const YUKI_ACCESS_KEY = process.env.YUKI_ACCESS_KEY;
 const YUKI_ADMIN_ID = process.env.YUKI_ADMIN_ID;
 
@@ -97,22 +97,23 @@ function buildInvoiceXML(row) {
             <DueDate>${dueDate}</DueDate>
             <Currency>EUR</Currency>
             <Contact>
-              <FullName>${row.name || "Onbekende klant"}</FullName>
-              ${row.kvk ? `<CoCNumber>${row.kvk}</CoCNumber>` : ""}
-              ${row.btw ? `<VATNumber>${row.btw}</VATNumber>` : ""}
-              <ContactType>${contactType}</ContactType>
-              ${row.country ? `<CountryCode>${row.country}</CountryCode>` : ""}
-              ${row.city ? `<City>${row.city}</City>` : ""}
-              ${row.postcode ? `<Zipcode>${row.postcode}</Zipcode>` : ""}
-              ${row.address || row.house_number
-                ? `<AddressLine_1>${[row.address, row.house_number]
-                    .filter(Boolean)
-                    .join(" ")}</AddressLine_1>`
-                : ""}
-              ${row.email ? `<EmailAddress>${row.email}</EmailAddress>` : ""}
-              ${row.phone ? `<PhoneHome>${row.phone}</PhoneHome>` : ""}
-              <DefaultSendingMethod>Email</DefaultSendingMethod>
-            </Contact>
+  <ContactCode />
+  <FullName>${row.name || "Onbekende klant"}</FullName>
+  <FirstName />
+  <MiddleName />
+  <LastName />
+  <Gender />
+  <CountryCode>${row.country || "NL"}</CountryCode>
+  <City>${row.city || ""}</City>
+  <Zipcode>${row.postcode || ""}</Zipcode>
+  <AddressLine_1>${[row.address, row.house_number].filter(Boolean).join(" ")}</AddressLine_1>
+  <AddressLine_2 />
+  <EmailAddress>${row.email || ""}</EmailAddress>
+  <Website />
+  ${row.kvk ? `<CoCNumber>${row.kvk}</CoCNumber>` : "<CoCNumber />"}
+  ${row.btw ? `<VATNumber>${row.btw}</VATNumber>` : "<VATNumber />"}
+  <ContactType>${row.type_klant?.toLowerCase().includes("zak") ? "Company" : "Person"}</ContactType>
+</Contact>
             <InvoiceLines>
               <InvoiceLine>
                 <Description>${row.description || "Dienst"}</Description>
