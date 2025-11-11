@@ -588,7 +588,7 @@ async function renderContracts() {
         c.vat_pct ? `${c.vat_pct}%` : "-",
         c.last_visit ? c.last_visit.split("T")[0] : "-",
         c.next_visit ? c.next_visit.split("T")[0] : "-",
-        c.maandelijkse_facturatie || "Nee",
+        c.maandelijkse_facturatie ? "Ja" : "Nee",
         c.contract_beeindigd || "Nee",
         c.contract_eind_datum ? c.contract_eind_datum.split("T")[0] : "-"
       ]);
@@ -713,6 +713,8 @@ function openContractDetail(c) {
     { id: "invoice_day", label: "Dag van facturatie (1–31)", type: "number", min: 1, max: 31, value: c.invoice_day || "" },
   ], async (vals) => {
     try {
+      if (vals.maandelijkse_facturatie === "Ja") vals.maandelijkse_facturatie = true;
+      if (vals.maandelijkse_facturatie === "Nee") vals.maandelijkse_facturatie = false;
       const res = await fetch(`/api/contracts/${c.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },

@@ -46,11 +46,11 @@ router.post("/", async (req, res) => {
 
     const insertClient = `
       INSERT INTO contacts (
-        id, name, email, phone, address, house_number, city,
+        id, name, email, phone, address, house_number, postcode, city,
         type_klant, bedrijfsnaam, kvk, btw, verzend_methode, tag,
         facturatie, status, created_at
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'Active',now())
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'Active',now())
       RETURNING *;
     `;
 
@@ -61,6 +61,7 @@ router.post("/", async (req, res) => {
       client.phone || "",
       client.address || "",
       client.houseNumber || "",
+      client.postcode || "",
       client.city || "",
       safeTypeKlant,
       client.bedrijfsnaam || "",
@@ -211,8 +212,8 @@ router.put("/:id", async (req, res) => {
           house_number=$5, city=$6, type_klant=$7,
           bedrijfsnaam=$8, kvk=$9, btw=$10,
           verzend_methode=$11, tag=$12, facturatie=$13,
-          status=$14
-      WHERE id=$15
+          status=$14, postcode=$15
+      WHERE id=$16
       RETURNING *;
     `;
 
@@ -231,6 +232,7 @@ router.put("/:id", async (req, res) => {
       JSON.stringify(safeTag), // FIXED: consistent met insert
       c.facturatie,
       c.status || "Active",
+      c.postcode,
       id,
     ];
 
