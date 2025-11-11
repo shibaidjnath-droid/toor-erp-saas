@@ -304,6 +304,7 @@ async function renderClients() {
       { id: "phone", label: "Telefoon" },
       { id: "address", label: "Adres" },
       { id: "houseNumber", label: "Huisnummer" },
+      { id: "postcode", label: "Postcode" },
       { id: "city", label: "Plaats" },
       { id: "typeKlant", label: "Type Klant", type: "select", options: ["Particulier", "Zakelijk"], value: "Particulier" },
       { id: "bedrijfsnaam", label: "Bedrijfsnaam", hidden: true },
@@ -315,7 +316,7 @@ async function renderClients() {
       { id: "contract_frequency", label: "Contract: Frequentie", type: "select", options: settings.frequencies },
       { id: "contract_description", label: "Contract: Beschrijving" },
       { id: "contract_priceInc", label: "Contract: Prijs incl. (€)" },
-      { id: "contract_vat", label: "Contract: BTW (%)", type: "select", options: ["21", "9", "0"], value: "21" },
+      { id: "contract_vat", label: "Contract: BTW (%)", type: "number", value: 21, disabled: true },
       { id: "contract_lastVisit", label: "Contract: Laatste bezoek", type: "date" },
     ], async (vals) => {
       try {
@@ -417,6 +418,7 @@ function openClientDetail(c) {
     { id: "phone", label: "Telefoon", value: c.phone },
     { id: "address", label: "Adres", value: c.address },
     { id: "houseNumber", label: "Huisnummer", value: c.house_number },
+    { id: "postcode", label: "Postcode", value: c.postcode || "" },
     { id: "city", label: "Plaats", value: c.city },
     { id: "typeKlant", label: "Type Klant", type: "select", options: ["Particulier", "Zakelijk"], value: c.type_klant },
     { id: "bedrijfsnaam", label: "Bedrijfsnaam", value: c.bedrijfsnaam || "", hidden: c.type_klant !== "Zakelijk" },
@@ -628,7 +630,7 @@ document.getElementById("newContractBtn").onclick = () => {
     { id: "frequency", label: "Frequentie", type: "select", options: settings.frequencies },
     { id: "description", label: "Beschrijving" },
     { id: "priceEx", label: "Prijs excl. (€)" },
-    { id: "vatPct", label: "BTW (%)", type: "select", options: ["21", "9", "0"], value: "21" },
+    { id: "vatPct", label: "BTW (%)", type: "number", value: 21, disabled: true },
     { id: "lastVisit", label: "Laatste bezoek", type: "date" },
     { id: "maandelijkse_facturatie", label: "Maandelijkse Facturatie", type: "select", options: ["Ja", "Nee"], value: "Nee" },
     { id: "invoice_day", label: "Dag van facturatie (1–31)", type: "number", min: 1, max: 31, value: "" },
@@ -639,7 +641,10 @@ document.getElementById("newContractBtn").onclick = () => {
         showToast("Selecteer een bestaande klant", "error");
         return;
       }
-
+      // ✅ Converteer Ja/Nee naar true/false
+      if (vals.maandelijkse_facturatie === "Ja") vals.maandelijkse_facturatie = true;
+      if (vals.maandelijkse_facturatie === "Nee") vals.maandelijkse_facturatie = false;
+      
       const res = await fetch("/api/contracts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -701,10 +706,10 @@ function openContractDetail(c) {
     { id: "description", label: "Beschrijving", value: c.description || "-" },
     { id: "frequency", label: "Frequentie", value: c.frequency || "-" },
     { id: "price_inc", label: "Prijs (incl.)", value: c.price_inc ? `€${Number(c.price_inc).toFixed(2)}` : "€0.00" },
-    { id: "vat_pct", label: "BTW (%)", value: c.vat_pct || "-" },
+    { id: "vat_pct", label: "BTW (%)", value: "21%", readonly: true },
     { id: "last_visit", label: "Laatste bezoek", value: c.last_visit ? c.last_visit.split("T")[0] : "-", readonly: true },
     { id: "next_visit", label: "Volgende bezoek", value: c.next_visit ? c.next_visit.split("T")[0] : "-", readonly: true },
-    { id: "maandelijkse_facturatie", label: "Maandelijkse facturatie", type: "select", options: ["Ja", "Nee"], value: c.maandelijkse_facturatie || "Nee" },
+    { id: "maandelijkse_facturatie", label: "Maandelijkse facturatie", type: "select", options: ["Ja", "Nee"], value: c.maandelijkse_facturatie ? "Ja" : "Nee"},
     { id: "invoice_day", label: "Dag van facturatie (1–31)", type: "number", min: 1, max: 31, value: c.invoice_day || "" },
   ], async (vals) => {
     try {
