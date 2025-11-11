@@ -1399,51 +1399,200 @@ async function renderPlanning() {
 }
 
 
-// ---------- Facturen ----------
-function renderInvoices(){
-  const list=document.getElementById("invoicesList");
-  const rows=invoices.map(i=>{
-    const c=clients.find(x=>x.id===i.clientId)?.name||"-";
-    return [c,`€${i.amount.toFixed(2)}`,i.date,i.status];
-  });
-  list.innerHTML=tableHTML(["Klant","Bedrag","Datum","Status"],rows);
-  list.querySelectorAll("tbody tr").forEach((tr,i)=>
-    tr.addEventListener("click",()=>openInvoiceDetail(invoices[i])));
-  document.getElementById("newInvoiceBtn").onclick=()=>openModal("Nieuwe Factuur",[
-    {id:"client",label:"Klant",type:"select",options:clients.map(c=>c.name)},
-    {id:"contract",label:"Contract",type:"select",options:contracts.map(c=>c.description)},
-    {id:"amount",label:"Bedrag incl. (€)"},
-    {id:"date",label:"Datum",type:"date"},
-    {id:"status",label:"Status",type:"select",options:["Open","Betaald","Achterstallig"]},
-  ],vals=>{
-    const cl=clients.find(c=>c.name===vals.client);
-    const co=contracts.find(c=>c.description===vals.contract);
-    invoices.push({id:Date.now(),clientId:cl?.id,contractId:co?.id,
-      amount:parseFloat(vals.amount||0),date:vals.date,status:vals.status});
-    showToast("Factuur toegevoegd","success");renderInvoices();
-  });
+// ---------- 💰 Facturen ----------
+async function renderInvoices() {
+  const list = document.getElementById("invoicesList");
+
+  try {
+    const res = await fetch("/api/invoices");
+    if (!res.ok) throw new Error("Fout bij ophalen facturen");
+    invoices = await res.json();
+
+    // 🔹 Header + filters + acties
+    list.innerHTML = `
+      <div class="flex flex-wrap justify-between items-center mb-2 gap-2">
+        <h2 class="text-xl font-semibold">Facturen</h2>
+
+        <div class="flex flex-wrap items-center gap-2 justify-end">
+          <input id="invoiceSearch" type="text" placeholder="Zoek..."
+            class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700" />
+
+          <select id="filterPeriod" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
+            <option value="">Periode</option>
+            <option value="vandaag">Vandaag</option>
+            <option value="deze_week">Deze week</option>
+            <option value="deze_maand">Deze maand</option>
+          </select>
+
+          <select id="filterMethod" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
+            <option value="">Methode</option>
+            <option value="maandelijks">Maandelijks</option>
+            <option value="per_klant">Per klant</option>
+            <option value="per_tag">Per tag</option>
+            <option value="per_periode">Per periode</option>
+          </select>
+
+          <button id="manualInvoiceBtn" class="bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700">🧾 Factureer een klant</button>
+          <button id="tagInvoiceBtn" class="bg-indigo-600 text-white px-3 py-2 rounded hover:bg-indigo-700">🏷️ Bulk per Tag</button>
+          <button id="periodInvoiceBtn" class="bg-green-600 text-white px-3 py-2 rounded hover:bg-green-700">📅 Bulk per Periode</button>
+        </div>
+      </div>
+
+      <div class="overflow-y-auto max-h-[70vh] relative" id="invoicesTable"></div>
+    `;
+
+    const tableContainer = document.getElementById("invoicesTable");
+
+    // 🔎 Filterfunctie
+    function renderFiltered() {
+      const s = document.getElementById("invoiceSearch").value.toLowerCase();
+      const p = document.getElementById("filterPeriod").value.toLowerCase();
+      const m = document.getElementById("filterMethod").value.toLowerCase();
+
+      const filtered = invoices.filter(inv => {
+        const matchesSearch = !s || Object.values(inv).join(" ").toLowerCase().includes(s);
+        const matchesMethod = !m || (inv.method || "").toLowerCase() === m;
+        // Periodefilter — basic check op datumtekst
+        const matchesPeriod =
+          !p ||
+          (p === "vandaag" && inv.created_at?.startsWith(new Date().toISOString().split("T")[0])) ||
+          (p === "deze_week" && new Date(inv.created_at) >= getStartOfWeek()) ||
+          (p === "deze_maand" && new Date(inv.created_at).getMonth() === new Date().getMonth());
+        return matchesSearch && matchesMethod && matchesPeriod;
+      });
+
+      const rows = filtered.map(i => [
+        i.client_name || "-",
+        i.planning_id || "-",
+        i.amount ? `€${Number(i.amount).toFixed(2)}` : "€0.00",
+        i.created_at ? i.created_at.split("T")[0] : "-",
+        i.method || "-",
+        i.status || "open",
+      ]);
+
+      tableContainer.innerHTML = tableHTML(["Klant", "Planning", "Bedrag", "Datum", "Methode", "Status"], rows);
+
+      tableContainer.querySelectorAll("tbody tr").forEach((tr, i) =>
+        tr.addEventListener("click", () => openInvoiceDetail(filtered[i]))
+      );
+    }
+
+    ["invoiceSearch", "filterPeriod", "filterMethod"].forEach(id =>
+      document.getElementById(id).addEventListener("input", renderFiltered)
+    );
+
+    renderFiltered();
+
+    // ---------- 🧾 Factureer een klant ----------
+    document.getElementById("manualInvoiceBtn").onclick = async () => {
+      openModal("Factureer een klant", [
+        { id: "search", label: "Zoek planning (naam, adres, datum)", type: "text", placeholder: "Bijv. Jansen, Dordrecht, 2025-11-10" },
+        { id: "amount", label: "Bedrag (€)", type: "number" },
+        { id: "description", label: "Beschrijving", type: "text" },
+      ], async (vals) => {
+        const body = {
+          search: vals.search,
+          amount: parseFloat(vals.amount || 0),
+          description: vals.description,
+        };
+        const res = await fetch("/api/invoices-yuki/manual", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (res.ok) showToast("Factuur verzonden naar Yuki", "success");
+        else showToast(data.error || "Fout bij aanmaken factuur", "error");
+        await renderInvoices();
+      });
+    };
+
+    // ---------- 🏷️ Bulk Facturatie per TAG ----------
+    document.getElementById("tagInvoiceBtn").onclick = async () => {
+      openModal("Bulk Facturatie per TAG", [
+        { id: "tag", label: "Selecteer Tag", type: "select", options: settings.tags },
+      ], async (vals) => {
+        const res = await fetch("/api/invoices-yuki/tag", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tag: vals.tag }),
+        });
+        const data = await res.json();
+        if (res.ok) showToast(`Bulk facturatie gestart voor tag ${vals.tag}`, "success");
+        else showToast(data.error || "Fout bij bulk facturatie", "error");
+        await renderInvoices();
+      });
+    };
+
+    // ---------- 📅 Bulk Facturatie per Periode ----------
+    document.getElementById("periodInvoiceBtn").onclick = async () => {
+      openModal("Bulk Facturatie per Periode", [
+        { id: "periode", label: "Periode", type: "select", options: ["Vandaag", "Deze week"] },
+      ], async (vals) => {
+        const res = await fetch("/api/invoices-yuki/period", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ periode: vals.periode }),
+        });
+        const data = await res.json();
+        if (res.ok) showToast(`Bulk facturatie gestart (${vals.periode})`, "success");
+        else showToast(data.error || "Fout bij bulk facturatie", "error");
+        await renderInvoices();
+      });
+    };
+
+  } catch (err) {
+    console.error("❌ Fout bij laden facturen:", err);
+    showToast("Fout bij laden facturen", "error");
+  }
 }
-function openInvoiceDetail(i){
-  const cl=clients.find(x=>x.id===i.clientId);
-  const co=contracts.find(x=>x.id===i.contractId);
-  openModal(`Factuur bewerken – ${cl?.name||"-"}`,[
-    {id:"client",label:"Klant",type:"select",options:clients.map(c=>c.name),value:cl?.name},
-    {id:"contract",label:"Contract",type:"select",options:contracts.map(c=>c.description),value:co?.description},
-    {id:"amount",label:"Bedrag (€)",value:i.amount},
-    {id:"date",label:"Datum",type:"date",value:i.date},
-    {id:"status",label:"Status",type:"select",options:["Open","Betaald","Achterstallig"],value:i.status},
-  ],vals=>{
-    Object.assign(i,{
-      clientId:clients.find(c=>c.name===vals.client)?.id,
-      contractId:contracts.find(c=>c.description===vals.contract)?.id,
-      amount:parseFloat(vals.amount||0),date:vals.date,status:vals.status
-    });
-    showToast("Factuur opgeslagen","success");renderInvoices();
-  },()=>confirmDelete("factuur",()=>{
-    invoices=invoices.filter(x=>x.id!==i.id);
-    renderInvoices();showToast("Factuur verwijderd","success");
-  }));
+
+// ---------- 🧾 Factuur detail ----------
+function openInvoiceDetail(i) {
+  openModal(`Factuur – ${i.client_name || "-"}`, [
+    { id: "client", label: "Klant", value: i.client_name || "-", readonly: true },
+    { id: "contract", label: "Contract ID", value: i.contract_id || "-", readonly: true },
+    { id: "planning", label: "Planning ID", value: i.planning_id || "-", readonly: true },
+    { id: "amount", label: "Bedrag", value: `€${Number(i.amount || 0).toFixed(2)}`, readonly: true },
+    { id: "date", label: "Datum", value: i.created_at?.split("T")[0] || "-", readonly: true },
+    { id: "method", label: "Methode", value: i.method || "-", readonly: true },
+    { id: "status", label: "Status", value: i.status || "open", readonly: true },
+  ], null, null, true);
 }
+
+// helper
+function getStartOfWeek() {
+  const d = new Date();
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  return new Date(d.setDate(diff));
+}
+
+// ---------- 📧 Facturatie Log ----------
+async function renderEmailLog() {
+  const list = document.getElementById("emailLogList");
+
+  try {
+    const res = await fetch("/api/yuki-log");
+    if (!res.ok) throw new Error("Fout bij ophalen facturatielog");
+    const logs = await res.json();
+
+    const rows = logs.map(l => [
+      l.created_at ? l.created_at.split("T")[0] : "-",
+      l.client_name || "-",
+      l.email || "-",
+      l.amount ? `€${Number(l.amount).toFixed(2)}` : "€0.00",
+      l.succeeded ? "✅ Ja" : "❌ Nee",
+      l.message || "-",
+    ]);
+
+    list.innerHTML = tableHTML(["Datum", "Klant", "E-mail", "Bedrag", "Gelukt", "Bericht"], rows);
+  } catch (err) {
+    console.error("❌ Fout bij ophalen facturatielog:", err);
+    showToast("Fout bij laden facturatielog", "error");
+  }
+}
+
 
 // ---------- 🧍 Members ----------
 async function renderMembers() {
