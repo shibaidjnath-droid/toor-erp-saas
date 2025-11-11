@@ -8,9 +8,8 @@ dotenv.config();
 const router = express.Router();
 
 // 🔐 Config
-const YUKI_BASE =
-  process.env.YUKI_BASE ||
-  "https://oamkb-compleet.yukiworks.nl/ws/Sales.asmx";
+const YUKI_AUTH_URL = process.env.YUKI_AUTH_URL || "https://api.yukiworks.nl/ws/Sales.asmx";
+const YUKI_BASE = process.env.YUKI_BASE || "https://oamkb-compleet.yukiworks.nl/ws/Sales.asmx";
 const YUKI_ACCESS_KEY = process.env.YUKI_ACCESS_KEY;
 const YUKI_ADMIN_ID = process.env.YUKI_ADMIN_ID;
 
@@ -29,23 +28,30 @@ function getVATType(vatPct) {
    ========================================================= */
 async function authenticateYuki() {
   try {
-    const res = await axios.post(
-      `${YUKI_BASE}/Authenticate`,
-      new URLSearchParams({ accessKey: YUKI_ACCESS_KEY }).toString(),
-      {
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          SOAPAction: '"http://www.theyukicompany.com/Authenticate"',
-        },
-        timeout: 20000,
-        validateStatus: () => true,
-      }
-    );
+    const soapBody = `<?xml version="1.0" encoding="utf-8"?>
+      <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                     xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                     xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+        <soap:Body>
+          <Authenticate xmlns="http://www.theyukicompany.com/">
+            <accessKey>${YUKI_ACCESS_KEY}</accessKey>
+          </Authenticate>
+        </soap:Body>
+      </soap:Envelope>`;
+
+    const res = await axios.post(YUKI_AUTH_URL, soapBody, {
+      headers: {
+        "Content-Type": "text/xml; charset=utf-8",
+        SOAPAction: '"http://www.theyukicompany.com/Authenticate"',
+      },
+      timeout: 20000,
+      validateStatus: () => true,
+    });
 
     const xml = String(res.data);
     const sessionId =
-      xml.match(/<string[^>]*>(.*?)<\/string>/)?.[1] ||
-      xml.match(/<AuthenticateResult>(.*?)<\/AuthenticateResult>/)?.[1];
+      xml.match(/<AuthenticateResult>(.*?)<\/AuthenticateResult>/)?.[1] ||
+      xml.match(/<string[^>]*>(.*?)<\/string>/)?.[1];
 
     if (!sessionId) {
       console.error("❌ Geen sessionId ontvangen van Yuki. Response:\n", xml);
@@ -59,6 +65,7 @@ async function authenticateYuki() {
     throw err;
   }
 }
+
 
 /* =========================================================
    🧾 XML-builder voor ProcessSalesInvoices
