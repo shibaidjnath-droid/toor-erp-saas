@@ -13,12 +13,9 @@ const YUKI_BASE = process.env.YUKI_BASE || "https://oamkb-compleet.yukiworks.nl/
 const YUKI_ACCESS_KEY = process.env.YUKI_ACCESS_KEY;
 const YUKI_ADMIN_ID = process.env.YUKI_ADMIN_ID;
 
-// 🧮 BTW-type mapping
-function getVATType(vatPct) {
-  const pct = parseFloat(vatPct);
-  if (pct >= 20) return 1; // hoog
-  if (pct >= 8 && pct < 10) return 2; // laag
-  return 3; // vrijgesteld
+// 🧮 BTW-type mapping (altijd 21%)
+function getVATType() {
+  return 1; // Altijd hoog tarief (21%)
 }
 
 /* =========================================================
@@ -114,9 +111,9 @@ function buildInvoiceXML(row) {
                 <Product>
                   <Description>${row.description || "Dienst"}</Description>
                   <SalesPrice>${row.price_inc || "0.00"}</SalesPrice>
-                  <VATPercentage>${row.vat_pct || "21.00"}</VATPercentage>
+                  <VATPercentage>21.00</VATPercentage>
                   <VATIncluded>true</VATIncluded>
-                  <VATType>${vatType}</VATType>
+                  <VATType>1</VATType>
                   <GLAccountCode>8000</GLAccountCode>
                 </Product>
               </InvoiceLine>
