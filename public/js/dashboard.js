@@ -1732,11 +1732,6 @@ function openMemberDetail(m) {
   }));
 }
 
-// ---------- Email Log, Leads, Offertes ----------
-function renderEmailLog(){
-  document.getElementById("emailLogList").innerHTML=
-    tableHTML(["Aan","Onderwerp","Datum"],emailLog.map(e=>[e.to,e.subject,e.date]));
-}
 function renderLeads(){
   const list=document.getElementById("leadsList");
   list.innerHTML=tableHTML(["Naam","E-mail","Telefoon","Bron"],
