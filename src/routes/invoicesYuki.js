@@ -279,7 +279,7 @@ router.post("/tag", async (req, res) => {
    FROM planning p
    JOIN contracts ct ON p.contract_id = ct.id
    JOIN contacts c ON ct.contact_id = c.id
-   WHERE c.tag=$1
+   WHERE $1 IN (SELECT jsonb_array_elements_text(c.tag))
      AND p.status NOT IN ('Geannuleerd','Gepland')
      AND p.invoiced=false
      AND (ct.maandelijkse_facturatie=false OR ct.maandelijkse_facturatie IS NULL)
