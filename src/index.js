@@ -42,7 +42,7 @@ app.use('/api/invoices', invoicesRouter);
 app.use('/api/webhook', webhookRouter);
 app.use('/api/tags', tagsRouter);
 app.use('/api/email-log', emailLogRouter);
-app.use("/api/yuki-logs", yukiLogsRouter);
+app.use("/api/yuki-log", yukiLogRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/leads', leadsRouter);
 app.use('/api/quotes', quotesRouter);
