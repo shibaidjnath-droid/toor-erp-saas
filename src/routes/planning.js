@@ -603,20 +603,21 @@ router.get("/tag-preview", async (req, res) => {
     if (!tag) return res.status(400).json({ error: "Tag is verplicht" });
 
     const { rows } = await pool.query(
-      `SELECT 
-         p.id, p.date, p.status, p.invoiced,
-         c.name AS client_name,
-         ct.description, ct.price_inc, ct.vat_pct
-       FROM planning p
-       JOIN contracts ct ON p.contract_id = ct.id
-       JOIN contacts c ON ct.contact_id = c.id
-       WHERE c.tag = $1
-         AND p.status NOT IN ('Geannuleerd','Gepland')
-         AND p.invoiced = false
-         AND (ct.maandelijkse_facturatie = false OR ct.maandelijkse_facturatie IS NULL)
-       ORDER BY p.date`,
-      [tag]
-    );
+  `SELECT 
+     p.id, p.date, p.status, p.invoiced,
+     c.name AS client_name,
+     ct.description, ct.price_inc, ct.vat_pct
+   FROM planning p
+   JOIN contracts ct ON p.contract_id = ct.id
+   JOIN contacts c ON ct.contact_id = c.id
+   WHERE $1 IN (SELECT jsonb_array_elements_text(c.tag))
+     AND p.status NOT IN ('Geannuleerd','Gepland')
+     AND p.invoiced = false
+     AND (ct.maandelijkse_facturatie = false OR ct.maandelijkse_facturatie IS NULL)
+   ORDER BY p.date`,
+  [tag]
+);
+
 
     res.json(rows);
   } catch (err) {
