@@ -218,6 +218,7 @@ router.post("/manual", async (req, res) => {
        LIMIT 1`,
       [clientId, contractId, planningId]
     );
+
     if (!rows.length)
       return res.status(404).json({ error: "Geen geschikt record gevonden" });
 
@@ -228,6 +229,26 @@ router.post("/manual", async (req, res) => {
     const result = await sendInvoice(row);
     await logYukiResult(row, result);
 
+    // ✅ Nieuwe lokale invoice opslaan
+    try {
+      await pool.query(
+        `INSERT INTO invoices 
+           (planning_id, contract_id, client_name, date, amount, method, status, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
+        [
+          row.planning_id,
+          row.contract_id,
+          row.name,
+          row.date,
+          row.price_inc || 0,
+          "Klant",
+          result.success ? "Verzonden" : "Fout"
+        ]
+      );
+    } catch (e) {
+      console.warn("⚠️ Kon invoice record niet opslaan (manual):", e.message);
+    }
+
     if (result.success)
       await pool.query(`UPDATE planning SET invoiced=true WHERE id=$1`, [row.planning_id]);
 
@@ -236,7 +257,7 @@ router.post("/manual", async (req, res) => {
       results: [formatResult(row, result)],
     });
   } catch (err) {
-    console.error("❌ Fout:", err.message);
+    console.error("❌ Fout /manual:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -246,11 +267,12 @@ router.post("/manual", async (req, res) => {
    ========================================================= */
 router.post("/tag", async (req, res) => {
   try {
-    const { tag } = req.body;
+    const { tag, selectedIds } = req.body;
     if (!tag) return res.status(400).json({ error: "Tag is verplicht" });
 
-    const { rows } = await pool.query(
-      `SELECT 
+    // Query met optionele ID-filter
+    let sql = `
+      SELECT 
          c.id AS client_id, c.name, c.email, c.phone, c.address, c.house_number, c.postcode, c.city, c.type_klant, c.tag,
          ct.id AS contract_id, ct.description, ct.price_inc, ct.vat_pct, ct.maandelijkse_facturatie,
          p.id AS planning_id, p.date, p.status, p.invoiced
@@ -260,10 +282,15 @@ router.post("/tag", async (req, res) => {
        WHERE c.tag=$1
          AND p.status NOT IN ('Geannuleerd','Gepland')
          AND p.invoiced=false
-         AND (ct.maandelijkse_facturatie=false OR ct.maandelijkse_facturatie IS NULL)`,
-      [tag]
-    );
+         AND (ct.maandelijkse_facturatie=false OR ct.maandelijkse_facturatie IS NULL)
+    `;
+    const params = [tag];
+    if (Array.isArray(selectedIds) && selectedIds.length) {
+      sql += ` AND p.id = ANY($2::uuid[])`;
+      params.push(selectedIds);
+    }
 
+    const { rows } = await pool.query(sql, params);
     if (!rows.length)
       return res.status(404).json({ error: "Geen planningen gevonden" });
 
@@ -275,6 +302,26 @@ router.post("/tag", async (req, res) => {
         row.sessionId = sessionId;
         const result = await sendInvoice(row);
         await logYukiResult(row, result);
+
+        try {
+          await pool.query(
+            `INSERT INTO invoices 
+               (planning_id, contract_id, client_name, date, amount, method, status, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
+            [
+              row.planning_id,
+              row.contract_id,
+              row.name,
+              row.date,
+              row.price_inc || 0,
+              "Tag",
+              result.success ? "Verzonden" : "Fout"
+            ]
+          );
+        } catch (e) {
+          console.warn("⚠️ Kon invoice record niet opslaan (tag):", e.message);
+        }
+
         results.push(formatResult(row, result));
         if (result.success)
           await pool.query(`UPDATE planning SET invoiced=true WHERE id=$1`, [row.planning_id]);
@@ -283,13 +330,13 @@ router.post("/tag", async (req, res) => {
       }
     }
 
-    const succeeded = results.filter((r) => r.success).length;
+    const succeeded = results.filter(r => r.success).length;
     return res.json({
       summary: `${results.length} facturen verwerkt, ${succeeded} succesvol`,
       results,
     });
   } catch (err) {
-    console.error("❌ Fout bij bulk/tag:", err.message);
+    console.error("❌ Fout /tag:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -303,7 +350,6 @@ router.post("/period", async (req, res) => {
     if (!startDate || !endDate)
       return res.status(400).json({ error: "startDate en endDate zijn verplicht" });
 
-    // ✅ Dynamische SQL-opbouw
     let sql = `
       SELECT 
         c.id AS client_id, c.name, c.email, c.phone, c.address, c.house_number, c.postcode, c.city, c.type_klant,
@@ -317,23 +363,14 @@ router.post("/period", async (req, res) => {
         AND p.invoiced = false
         AND (ct.maandelijkse_facturatie = false OR ct.maandelijkse_facturatie IS NULL)
     `;
-
     const params = [startDate, endDate];
-
-    // ✅ Alleen toevoegen als geselecteerde IDs bestaan
     if (Array.isArray(selectedIds) && selectedIds.length) {
       sql += ` AND p.id = ANY($3::uuid[])`;
       params.push(selectedIds);
     }
-
     sql += ` ORDER BY p.date`;
 
-    // 🔍 Optioneel debuggen
-    // console.log("🧾 Query:", sql);
-    // console.log("📦 Params:", params);
-
     const { rows } = await pool.query(sql, params);
-
     if (!rows.length)
       return res.status(404).json({ error: "Geen planningen in deze periode" });
 
@@ -345,6 +382,26 @@ router.post("/period", async (req, res) => {
         row.sessionId = sessionId;
         const result = await sendInvoice(row);
         await logYukiResult(row, result);
+
+        try {
+          await pool.query(
+            `INSERT INTO invoices 
+               (planning_id, contract_id, client_name, date, amount, method, status, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
+            [
+              row.planning_id,
+              row.contract_id,
+              row.name,
+              row.date,
+              row.price_inc || 0,
+              "Periode",
+              result.success ? "Verzonden" : "Fout"
+            ]
+          );
+        } catch (e) {
+          console.warn("⚠️ Kon invoice record niet opslaan (periode):", e.message);
+        }
+
         results.push(formatResult(row, result));
         if (result.success)
           await pool.query(`UPDATE planning SET invoiced = true WHERE id = $1`, [row.planning_id]);
@@ -359,7 +416,7 @@ router.post("/period", async (req, res) => {
       results,
     });
   } catch (err) {
-    console.error("❌ Fout bij bulk/period:", err.message);
+    console.error("❌ Fout /period:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
