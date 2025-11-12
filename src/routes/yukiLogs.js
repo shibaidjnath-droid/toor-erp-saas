@@ -24,7 +24,7 @@ router.get("/", async (_req, res) => {
 
 /**
  * ✅ (optioneel) GET /api/yuki-log/:planningId
- * Filtert op specifiek planning_id (handig voor debug/detail) new update
+ * Filtert op specifiek planning_id (handig voor debug/detail)
  */
 router.get("/:planningId", async (req, res) => {
   try {

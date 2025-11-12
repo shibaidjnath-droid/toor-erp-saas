@@ -1570,12 +1570,33 @@ function getStartOfWeek() {
 
 // ---------- 📧 Facturatie Log ----------
 async function renderEmailLog() {
+  console.log("🧾 renderEmailLog() gestart");
+
   const list = document.getElementById("emailLogList");
+  if (!list) {
+    console.warn("⚠️ Element emailLogList niet gevonden!");
+    return;
+  }
 
   try {
+    console.log("🌐 Ophalen van logs...");
     const res = await fetch("/api/yuki-log");
-    if (!res.ok) throw new Error("Fout bij ophalen facturatielog");
+    console.log("✅ Fetch uitgevoerd, status:", res.status);
+
+    if (!res.ok) {
+      console.error("❌ Foutieve response:", res.status);
+      showToast("Fout bij ophalen facturatielog", "error");
+      return;
+    }
+
     const logs = await res.json();
+    console.log("📊 Aantal logrecords ontvangen:", logs.length);
+    console.table(logs);
+
+    if (!Array.isArray(logs) || !logs.length) {
+      list.innerHTML = `<p class='text-gray-500 p-3'>Geen facturatie logs gevonden.</p>`;
+      return;
+    }
 
     const rows = logs.map(l => [
       l.created_at ? l.created_at.split("T")[0] : "-",
@@ -1583,15 +1604,21 @@ async function renderEmailLog() {
       l.email || "-",
       l.amount ? `€${Number(l.amount).toFixed(2)}` : "€0.00",
       l.succeeded ? "✅ Ja" : "❌ Nee",
-      l.message || "-",
+      l.message || "-"
     ]);
 
-    list.innerHTML = tableHTML(["Datum", "Klant", "E-mail", "Bedrag", "Gelukt", "Bericht"], rows);
+    list.innerHTML = tableHTML(
+      ["Datum", "Klant", "E-mail", "Bedrag", "Gelukt", "Bericht"],
+      rows
+    );
+
+    console.log("📋 Logtabel gerenderd");
   } catch (err) {
-    console.error("❌ Fout bij ophalen facturatielog:", err);
+    console.error("💥 Fout in renderEmailLog():", err);
     showToast("Fout bij laden facturatielog", "error");
   }
 }
+
 
 
 // ---------- 🧍 Members ----------
