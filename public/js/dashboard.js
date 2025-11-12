@@ -47,6 +47,10 @@ let quotes = [
   
 ];
 
+let tags = [
+
+];
+
 // ---------- Initialisatie ----------
 window.addEventListener("load", () => {
   setupTabs();
@@ -1402,6 +1406,21 @@ async function renderPlanning() {
 // ---------- 💰 Facturen ----------
 async function renderInvoices() {
   const list = document.getElementById("invoicesList");
+// ✅ Tags ophalen als ze nog niet in geheugen staan
+if (!Array.isArray(tags) || !tags.length) {
+  try {
+    const tRes = await fetch("/api/tags");
+    if (tRes.ok) {
+      tags = await tRes.json();
+    } else {
+      tags = [];
+      console.warn("⚠️ Geen tags ontvangen van server.");
+    }
+  } catch (err) {
+    console.error("⚠️ Fout bij ophalen tags:", err.message);
+    tags = [];
+  }
+}
 
   try {
     const res = await fetch("/api/invoices");
@@ -1462,19 +1481,19 @@ async function renderInvoices() {
       });
 
       const rows = filtered.map(i => [
-        i.client_name || "-",
-        i.planning_id || "-",
-        i.amount ? `€${Number(i.amount).toFixed(2)}` : "€0.00",
-        i.created_at ? i.created_at.split("T")[0] : "-",
-        i.method || "-",
-        i.status || "open",
-      ]);
+  i.client_name || "-",
+  i.planning_id ? i.planning_id.slice(0, 8) + "…" : "-",
+  i.amount ? `€${Number(i.amount).toFixed(2)}` : "€0.00",
+  i.date ? i.date.split("T")[0] : (i.created_at ? i.created_at.split("T")[0] : "-"),
+  i.method || "-",
+  renderStatusBadge(i.status)
+]);
 
-      tableContainer.innerHTML = tableHTML(["Klant", "Planning", "Bedrag", "Datum", "Methode", "Status"], rows);
+tableContainer.innerHTML = tableHTML(
+  ["Klant", "Planning", "Bedrag", "Datum", "Methode", "Status"],
+  rows
+);
 
-      tableContainer.querySelectorAll("tbody tr").forEach((tr, i) =>
-        tr.addEventListener("click", () => openInvoiceDetail(filtered[i]))
-      );
     }
 
     ["invoiceSearch", "filterPeriod", "filterMethod"].forEach(id =>
@@ -1506,6 +1525,17 @@ async function renderInvoices() {
         await renderInvoices();
       });
     };
+function renderStatusBadge(status) {
+  const color =
+    status === "Betaald" ? "bg-green-100 text-green-700" :
+    status === "Fout" ? "bg-red-100 text-red-700" :
+    status === "Verzonden" ? "bg-blue-100 text-blue-700" :
+    "bg-gray-100 text-gray-700";
+
+  return `<span class="px-2 py-1 rounded text-xs font-medium ${color}">
+            ${status || "-"}
+          </span>`;
+}
 
     // ---------- 🏷️ Bulk Facturatie per Tag ----------
 document.getElementById("tagInvoiceBtn").onclick = async () => {
