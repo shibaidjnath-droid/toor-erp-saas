@@ -299,25 +299,40 @@ router.post("/tag", async (req, res) => {
    ========================================================= */
 router.post("/period", async (req, res) => {
   try {
-    const { startDate, endDate } = req.body;
+    const { startDate, endDate, selectedIds } = req.body;
     if (!startDate || !endDate)
       return res.status(400).json({ error: "startDate en endDate zijn verplicht" });
 
-    const { rows } = await pool.query(
-      `SELECT 
-         c.id AS client_id, c.name, c.email, c.phone, c.address, c.house_number, c.postcode, c.city, c.type_klant,
-         ct.id AS contract_id, ct.description, ct.price_inc, ct.vat_pct, ct.maandelijkse_facturatie,
-         p.id AS planning_id, p.date, p.status, p.invoiced
-       FROM planning p
-       JOIN contracts ct ON p.contract_id = ct.id
-       JOIN contacts c ON ct.contact_id = c.id
-       WHERE p.date BETWEEN $1 AND $2
-         AND p.status NOT IN ('Geannuleerd','Gepland')
-         AND p.invoiced=false
-         AND (ct.maandelijkse_facturatie=false OR ct.maandelijkse_facturatie IS NULL)
-       ORDER BY p.date`,
-      [startDate, endDate]
-    );
+    // ✅ Dynamische SQL-opbouw
+    let sql = `
+      SELECT 
+        c.id AS client_id, c.name, c.email, c.phone, c.address, c.house_number, c.postcode, c.city, c.type_klant,
+        ct.id AS contract_id, ct.description, ct.price_inc, ct.vat_pct, ct.maandelijkse_facturatie,
+        p.id AS planning_id, p.date, p.status, p.invoiced
+      FROM planning p
+      JOIN contracts ct ON p.contract_id = ct.id
+      JOIN contacts c ON ct.contact_id = c.id
+      WHERE p.date BETWEEN $1 AND $2
+        AND p.status NOT IN ('Geannuleerd','Gepland')
+        AND p.invoiced = false
+        AND (ct.maandelijkse_facturatie = false OR ct.maandelijkse_facturatie IS NULL)
+    `;
+
+    const params = [startDate, endDate];
+
+    // ✅ Alleen toevoegen als geselecteerde IDs bestaan
+    if (Array.isArray(selectedIds) && selectedIds.length) {
+      sql += ` AND p.id = ANY($3::uuid[])`;
+      params.push(selectedIds);
+    }
+
+    sql += ` ORDER BY p.date`;
+
+    // 🔍 Optioneel debuggen
+    // console.log("🧾 Query:", sql);
+    // console.log("📦 Params:", params);
+
+    const { rows } = await pool.query(sql, params);
 
     if (!rows.length)
       return res.status(404).json({ error: "Geen planningen in deze periode" });
@@ -332,13 +347,13 @@ router.post("/period", async (req, res) => {
         await logYukiResult(row, result);
         results.push(formatResult(row, result));
         if (result.success)
-          await pool.query(`UPDATE planning SET invoiced=true WHERE id=$1`, [row.planning_id]);
+          await pool.query(`UPDATE planning SET invoiced = true WHERE id = $1`, [row.planning_id]);
       } catch (err) {
         results.push({ client: row.name, success: false, message: err.message });
       }
     }
 
-    const succeeded = results.filter((r) => r.success).length;
+    const succeeded = results.filter(r => r.success).length;
     return res.json({
       summary: `${results.length} facturen verwerkt, ${succeeded} succesvol`,
       results,
@@ -348,5 +363,6 @@ router.post("/period", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 export default router;
