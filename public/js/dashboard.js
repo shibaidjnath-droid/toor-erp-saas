@@ -1525,21 +1525,106 @@ async function renderInvoices() {
     };
 
     // ---------- 📅 Bulk Facturatie per Periode ----------
-    document.getElementById("periodInvoiceBtn").onclick = async () => {
-      openModal("Bulk Facturatie per Periode", [
-        { id: "periode", label: "Periode", type: "select", options: ["Vandaag", "Deze week"] },
-      ], async (vals) => {
-        const res = await fetch("/api/invoices-yuki/period", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ periode: vals.periode }),
-        });
-        const data = await res.json();
-        if (res.ok) showToast(`Bulk facturatie gestart (${vals.periode})`, "success");
-        else showToast(data.error || "Fout bij bulk facturatie", "error");
-        await renderInvoices();
+document.getElementById("periodInvoiceBtn").onclick = async () => {
+  openModal("Bulk Facturatie per Periode", [
+    { id: "periode", label: "Periode", type: "select", options: ["Vandaag", "Deze week", "Deze maand"] },
+  ], async (vals) => {
+    // 🧮 Bereken start- en einddatum
+    const today = new Date();
+    let startDate, endDate;
+
+    switch (vals.periode) {
+      case "Vandaag":
+        startDate = endDate = today.toISOString().split("T")[0];
+        break;
+      case "Deze week":
+        const day = today.getDay();
+        const diffToMonday = today.getDate() - day + (day === 0 ? -6 : 1);
+        const monday = new Date(today.setDate(diffToMonday));
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+        startDate = monday.toISOString().split("T")[0];
+        endDate = sunday.toISOString().split("T")[0];
+        break;
+      case "Deze maand":
+        const y = today.getFullYear();
+        const m = today.getMonth();
+        const first = new Date(y, m, 1);
+        const last = new Date(y, m + 1, 0);
+        startDate = first.toISOString().split("T")[0];
+        endDate = last.toISOString().split("T")[0];
+        break;
+      default:
+        showToast("Ongeldige periode", "error");
+        return;
+    }
+
+    // 🧩 Haal planningen in deze periode op (preview)
+    const previewRes = await fetch(`/api/planning/period-preview?startDate=${startDate}&endDate=${endDate}`);
+    const previewData = await previewRes.json();
+    if (!previewRes.ok || !Array.isArray(previewData) || !previewData.length) {
+      showToast(previewData.error || "Geen planningen gevonden", "warning");
+      return;
+    }
+
+    // 🧾 Bouw tabel met checkboxes
+    const checkboxes = previewData.map(p => ({
+      id: p.id,
+      label: `${p.client_name} – ${p.description} (€${p.price_inc}) op ${p.date.split("T")[0]}`
+    }));
+
+    const modalContent = document.createElement("div");
+    modalContent.innerHTML = `
+      <p class="mb-3 text-gray-700 dark:text-gray-300">Selecteer welke planningen je wilt factureren (${startDate} t/m ${endDate}):</p>
+      <div class="max-h-64 overflow-y-auto border p-2 rounded space-y-1 dark:border-gray-700">
+        ${checkboxes.map(c =>
+          `<label class="flex items-center gap-2">
+             <input type="checkbox" class="chkPlanning" value="${c.id}" checked>
+             <span>${c.label}</span>
+           </label>`
+        ).join("")}
+      </div>
+      <div class="flex justify-end gap-2 mt-4">
+        <button id="cancelBulkBtn" class="btn btn-secondary">Annuleren</button>
+        <button id="confirmBulkBtn" class="btn btn-ok">Verzenden</button>
+      </div>
+    `;
+
+    const modalOverlay = document.createElement("div");
+    modalOverlay.className = "modal-overlay";
+    modalOverlay.appendChild(modalContent);
+    document.body.appendChild(modalOverlay);
+
+    // ❌ Annuleren
+    document.getElementById("cancelBulkBtn").onclick = () => modalOverlay.remove();
+
+    // ✅ Verzenden
+    document.getElementById("confirmBulkBtn").onclick = async () => {
+      const selectedIds = [...modalContent.querySelectorAll(".chkPlanning:checked")].map(i => i.value);
+      if (!selectedIds.length) {
+        showToast("Geen planningen geselecteerd", "warning");
+        return;
+      }
+
+      showToast(`Versturen van ${selectedIds.length} facturen gestart...`, "info");
+
+      const res = await fetch("/api/invoices-yuki/period", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ startDate, endDate, selectedIds }),
       });
+
+      const data = await res.json();
+      modalOverlay.remove();
+
+      if (res.ok) showToast(data.summary || "Facturatie gestart", "success");
+      else showToast(data.error || "Fout bij verzenden", "error");
+
+      await renderInvoices();
     };
+  });
+};
+
 
   } catch (err) {
     console.error("❌ Fout bij laden facturen:", err);

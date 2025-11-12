@@ -566,4 +566,34 @@ router.put("/:id", async (req, res) => {
     res.status(500).json({ error: "Fout bij bijwerken planning" });
   }
 });
+/** ✅ GET – planningrecords in periode (voor facturatie preview) */
+router.get("/period-preview", async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    if (!startDate || !endDate)
+      return res.status(400).json({ error: "startDate en endDate zijn verplicht" });
+
+    const { rows } = await pool.query(
+      `SELECT 
+         p.id, p.date, p.status, p.invoiced,
+         c.name AS client_name,
+         ct.description, ct.price_inc, ct.vat_pct
+       FROM planning p
+       JOIN contracts ct ON p.contract_id = ct.id
+       JOIN contacts c ON ct.contact_id = c.id
+       WHERE p.date BETWEEN $1 AND $2
+         AND p.status NOT IN ('Geannuleerd','Gepland')
+         AND p.invoiced = false
+         AND (ct.maandelijkse_facturatie = false OR ct.maandelijkse_facturatie IS NULL)
+       ORDER BY p.date`,
+      [startDate, endDate]
+    );
+
+    res.json(rows);
+  } catch (err) {
+    console.error("❌ Fout bij ophalen planning preview:", err.message);
+    res.status(500).json({ error: "Databasefout bij ophalen planning preview" });
+  }
+});
+
 export default router;
