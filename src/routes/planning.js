@@ -596,4 +596,34 @@ router.get("/period-preview", async (req, res) => {
   }
 });
 
+/** ✅ GET – planningrecords per tag (voor facturatie preview) */
+router.get("/tag-preview", async (req, res) => {
+  try {
+    const { tag } = req.query;
+    if (!tag) return res.status(400).json({ error: "Tag is verplicht" });
+
+    const { rows } = await pool.query(
+      `SELECT 
+         p.id, p.date, p.status, p.invoiced,
+         c.name AS client_name,
+         ct.description, ct.price_inc, ct.vat_pct
+       FROM planning p
+       JOIN contracts ct ON p.contract_id = ct.id
+       JOIN contacts c ON ct.contact_id = c.id
+       WHERE c.tag = $1
+         AND p.status NOT IN ('Geannuleerd','Gepland')
+         AND p.invoiced = false
+         AND (ct.maandelijkse_facturatie = false OR ct.maandelijkse_facturatie IS NULL)
+       ORDER BY p.date`,
+      [tag]
+    );
+
+    res.json(rows);
+  } catch (err) {
+    console.error("❌ Fout bij ophalen tag preview:", err.message);
+    res.status(500).json({ error: "Databasefout bij ophalen tag preview" });
+  }
+});
+
+
 export default router;

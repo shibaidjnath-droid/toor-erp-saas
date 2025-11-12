@@ -272,23 +272,23 @@ router.post("/tag", async (req, res) => {
 
     // Query met optionele ID-filter
     let sql = `
-      SELECT 
-         c.id AS client_id, c.name, c.email, c.phone, c.address, c.house_number, c.postcode, c.city, c.type_klant, c.tag,
-         ct.id AS contract_id, ct.description, ct.price_inc, ct.vat_pct, ct.maandelijkse_facturatie,
-         p.id AS planning_id, p.date, p.status, p.invoiced
-       FROM planning p
-       JOIN contracts ct ON p.contract_id = ct.id
-       JOIN contacts c ON ct.contact_id = c.id
-       WHERE c.tag=$1
-         AND p.status NOT IN ('Geannuleerd','Gepland')
-         AND p.invoiced=false
-         AND (ct.maandelijkse_facturatie=false OR ct.maandelijkse_facturatie IS NULL)
-    `;
-    const params = [tag];
-    if (Array.isArray(selectedIds) && selectedIds.length) {
-      sql += ` AND p.id = ANY($2::uuid[])`;
-      params.push(selectedIds);
-    }
+       SELECT 
+     c.id AS client_id, c.name, c.email, c.phone, c.address, c.house_number, c.postcode, c.city, c.type_klant, c.tag,
+     ct.id AS contract_id, ct.description, ct.price_inc, ct.vat_pct, ct.maandelijkse_facturatie,
+     p.id AS planning_id, p.date, p.status, p.invoiced
+   FROM planning p
+   JOIN contracts ct ON p.contract_id = ct.id
+   JOIN contacts c ON ct.contact_id = c.id
+   WHERE c.tag=$1
+     AND p.status NOT IN ('Geannuleerd','Gepland')
+     AND p.invoiced=false
+     AND (ct.maandelijkse_facturatie=false OR ct.maandelijkse_facturatie IS NULL)
+`;
+const params = [tag];
+if (Array.isArray(selectedIds) && selectedIds.length) {
+  sql += ` AND p.id = ANY($2::uuid[])`;
+  params.push(selectedIds);
+}
 
     const { rows } = await pool.query(sql, params);
     if (!rows.length)

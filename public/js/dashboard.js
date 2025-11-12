@@ -1507,22 +1507,83 @@ async function renderInvoices() {
       });
     };
 
-    // ---------- 🏷️ Bulk Facturatie per TAG ----------
-    document.getElementById("tagInvoiceBtn").onclick = async () => {
-      openModal("Bulk Facturatie per TAG", [
-        { id: "tag", label: "Selecteer Tag", type: "select", options: settings.tags },
-      ], async (vals) => {
-        const res = await fetch("/api/invoices-yuki/tag", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tag: vals.tag }),
-        });
-        const data = await res.json();
-        if (res.ok) showToast(`Bulk facturatie gestart voor tag ${vals.tag}`, "success");
-        else showToast(data.error || "Fout bij bulk facturatie", "error");
-        await renderInvoices();
+    // ---------- 🏷️ Bulk Facturatie per Tag ----------
+document.getElementById("tagInvoiceBtn").onclick = async () => {
+  openModal("Bulk Facturatie per Tag", [
+    { id: "tag", label: "Selecteer Tag", type: "select", options: tags.map(t => t.name) }
+  ], async (vals) => {
+    const tag = vals.tag;
+    if (!tag) {
+      showToast("Geen tag geselecteerd", "warning");
+      return;
+    }
+
+    // 🧩 Haal planningen op voor deze tag
+    const previewRes = await fetch(`/api/planning/tag-preview?tag=${encodeURIComponent(tag)}`);
+    const previewData = await previewRes.json();
+    if (!previewRes.ok || !Array.isArray(previewData) || !previewData.length) {
+      showToast(previewData.error || "Geen planningen gevonden", "warning");
+      return;
+    }
+
+    // 🧾 Bouw tabel met checkboxes
+    const checkboxes = previewData.map(p => ({
+      id: p.id,
+      label: `${p.client_name} – ${p.description} (€${p.price_inc}) op ${p.date.split("T")[0]}`
+    }));
+
+    const modalContent = document.createElement("div");
+    modalContent.innerHTML = `
+      <p class="mb-3 text-gray-700 dark:text-gray-300">Selecteer welke planningen je wilt factureren (Tag: ${tag}):</p>
+      <div class="max-h-64 overflow-y-auto border p-2 rounded space-y-1 dark:border-gray-700">
+        ${checkboxes.map(c =>
+          `<label class="flex items-center gap-2">
+             <input type="checkbox" class="chkPlanning" value="${c.id}" checked>
+             <span>${c.label}</span>
+           </label>`
+        ).join("")}
+      </div>
+      <div class="flex justify-end gap-2 mt-4">
+        <button id="cancelTagBulkBtn" class="btn btn-secondary">Annuleren</button>
+        <button id="confirmTagBulkBtn" class="btn btn-ok">Verzenden</button>
+      </div>
+    `;
+
+    const modalOverlay = document.createElement("div");
+    modalOverlay.className = "modal-overlay";
+    modalOverlay.appendChild(modalContent);
+    document.body.appendChild(modalOverlay);
+
+    // ❌ Annuleren
+    document.getElementById("cancelTagBulkBtn").onclick = () => modalOverlay.remove();
+
+    // ✅ Verzenden
+    document.getElementById("confirmTagBulkBtn").onclick = async () => {
+      const selectedIds = [...modalContent.querySelectorAll(".chkPlanning:checked")].map(i => i.value);
+      if (!selectedIds.length) {
+        showToast("Geen planningen geselecteerd", "warning");
+        return;
+      }
+
+      showToast(`Versturen van ${selectedIds.length} facturen gestart...`, "info");
+
+      const res = await fetch("/api/invoices-yuki/tag", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tag, selectedIds }),
       });
+
+      const data = await res.json();
+      modalOverlay.remove();
+
+      if (res.ok) showToast(data.summary || "Facturatie gestart", "success");
+      else showToast(data.error || "Fout bij verzenden", "error");
+
+      await renderInvoices();
     };
+  });
+};
+
 
     // ---------- 📅 Bulk Facturatie per Periode ----------
 document.getElementById("periodInvoiceBtn").onclick = async () => {
