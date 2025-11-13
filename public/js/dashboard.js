@@ -1517,8 +1517,7 @@ document.getElementById("manualInvoiceBtn").onclick = async () => {
       showToast("Zoekterm is verplicht", "warning");
       return;
     }
-
-    const searchRes = await fetch(`/api/planning/search?term=${encodeURIComponent(vals.search)}`);
+    const searchRes = await fetch(`/api/planning/search?term=${encodeURIComponent(vals.search)}&_=${Date.now()}`);
     const results = await searchRes.json();
 
     if (!searchRes.ok || !Array.isArray(results) || !results.length) {

@@ -629,6 +629,10 @@ router.get("/tag-preview", async (req, res) => {
 // ✅ Zoekplanning (voor Factureer een klant)
 router.get("/search", async (req, res) => {
   try {
+        // ⛔️ Cache voorkomen (belangrijk voor Render / Cloudflare)
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
     const term = (req.query.term || "").toLowerCase();
     if (!term) return res.json([]);
 
