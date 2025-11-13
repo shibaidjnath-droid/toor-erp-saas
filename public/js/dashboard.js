@@ -1669,7 +1669,17 @@ document.getElementById("manualInvoiceBtn").onclick = async () => {
   // ❌ Belangrijk: GEEN setTimeout meer dat de save-knop terugzet naar 'Opslaan'
   // (Dat veroorzaakte dat de openModal-logica jouw eigen flow overschreef)
 };
+function renderStatusBadge(status) {
+  const color =
+    status === "Betaald" ? "bg-green-100 text-green-700" :
+    status === "Fout" ? "bg-red-100 text-red-700" :
+    status === "Verzonden" ? "bg-blue-100 text-blue-700" :
+    "bg-gray-100 text-gray-700";
 
+  return `<span class="px-2 py-1 rounded text-xs font-medium ${color}">
+            ${status || "-"}
+          </span>`;
+}
 
     // ---------- 📅 Bulk Facturatie per Periode ----------
 document.getElementById("periodInvoiceBtn").onclick = async () => {
