@@ -74,4 +74,26 @@ router.patch('/:id/toggle', (req, res) => {
   res.json({ message: `Status updated to ${c.status}`, contact: c });
 });
 
+// ✅ Contract ophalen op basis van planningId
+router.get("/by-planning/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { rows } = await pool.query(`
+      SELECT 
+        c.id, c.contact_id AS client_id, c.type_service, c.description,
+        ct.name AS client_name
+      FROM contracts c
+      JOIN planning p ON p.contract_id = c.id
+      JOIN contacts ct ON c.contact_id = ct.id
+      WHERE p.id = $1
+      LIMIT 1
+    `, [id]);
+    if (!rows.length) return res.status(404).json({ error: "Contract niet gevonden" });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error("❌ contract by-planning error:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
 export default router;

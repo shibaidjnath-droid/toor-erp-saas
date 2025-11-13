@@ -626,33 +626,36 @@ router.get("/tag-preview", async (req, res) => {
   }
 });
 
-/** 🔍 Zoek planning op naam, adres of datum */
+// ✅ Zoekplanning (voor Factureer een klant)
 router.get("/search", async (req, res) => {
   try {
-    const { term } = req.query;
-    if (!term) return res.status(400).json({ error: "term is verplicht" });
+    const term = (req.query.term || "").toLowerCase();
+    if (!term) return res.json([]);
 
-    const like = `%${term.toLowerCase()}%`;
-    const { rows } = await pool.query(
-      `SELECT 
-         p.id, p.date, p.status,
-         c.name AS client_name, c.address
-       FROM planning p
-       JOIN contracts ct ON p.contract_id = ct.id
-       JOIN contacts c ON ct.contact_id = c.id
-       WHERE (LOWER(c.name) LIKE $1 OR LOWER(c.address) LIKE $1 OR CAST(p.date AS TEXT) LIKE $1)
-       ORDER BY p.date DESC
-       LIMIT 25`,
-      [like]
-    );
+    const { rows } = await pool.query(`
+      SELECT 
+        p.id, p.date, 
+        ct.name AS client_name, 
+        ct.address, ct.house_number, ct.city,
+        c.id AS contract_id
+      FROM planning p
+      JOIN contracts c ON p.contract_id = c.id
+      JOIN contacts ct ON c.contact_id = ct.id
+      WHERE 
+        LOWER(ct.name) LIKE '%' || $1 || '%' OR
+        LOWER(ct.address) LIKE '%' || $1 || '%' OR
+        LOWER(ct.city) LIKE '%' || $1 || '%' OR
+        TO_CHAR(p.date, 'YYYY-MM-DD') LIKE '%' || $1 || '%'
+      ORDER BY p.date DESC
+      LIMIT 50
+    `, [term]);
 
     res.json(rows);
   } catch (err) {
-    console.error("❌ Fout bij planning search:", err.message);
-    res.status(500).json({ error: "Databasefout bij planning search" });
+    console.error("❌ planning search error:", err);
+    res.status(500).json({ error: "Database search error" });
   }
 });
-
 
 
 export default router;
