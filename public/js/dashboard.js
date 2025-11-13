@@ -1502,8 +1502,9 @@ tableContainer.innerHTML = tableHTML(
 
     renderFiltered();
 
-   // ---------- 🧾 Factureer een klant ----------
+// ---------- 🧾 Factureer een klant ----------
 document.getElementById("manualInvoiceBtn").onclick = async () => {
+  // Fase 1: modal openen met zoekveld
   openModal("Factureer een klant", [
     {
       id: "search",
@@ -1511,14 +1512,15 @@ document.getElementById("manualInvoiceBtn").onclick = async () => {
       type: "text",
       placeholder: "Bijv. Jansen, Dordrecht, 2025-11-10",
     },
-  ], async (vals) => {
-    // 🔍 1️⃣ Zoeken in planning
-    if (!vals.search) {
+  ], async (vals, modal) => {
+    // We sluiten modal nu NIET automatisch
+    const searchTerm = vals.search?.trim();
+    if (!searchTerm) {
       showToast("Zoekterm is verplicht", "warning");
       return;
     }
 
-    const searchRes = await fetch(`/api/planning/search?term=${encodeURIComponent(vals.search)}`);
+    const searchRes = await fetch(`/api/planning/search?term=${encodeURIComponent(searchTerm)}`);
     const results = await searchRes.json();
 
     if (!searchRes.ok || !Array.isArray(results) || !results.length) {
@@ -1526,73 +1528,62 @@ document.getElementById("manualInvoiceBtn").onclick = async () => {
       return;
     }
 
-    // 🔹 Planning dropdown binnen dezelfde modal
-    const modal = document.querySelector(".modal-card");
-    const extraHTML = `
-      <div class="form-field mt-3">
-        <label>Kies planningrecord</label>
+    // 🔹 Bouw vervolgvelden in dezelfde modal
+    const modalCard = document.querySelector(".modal-card");
+    modalCard.innerHTML = `
+      <h2 class="text-lg font-semibold mb-2">Factureer een klant</h2>
+      <div class="form-field">
+        <label>Planning record</label>
         <select id="planningSelect" class="input border rounded w-full px-2 py-1">
           ${results.map(p => 
             `<option value="${p.id}">${p.client_name} – ${p.address || ""} (${p.date.split("T")[0]})</option>`
           ).join("")}
         </select>
       </div>
-      <div id="extraFields" class="mt-3 hidden">
-        <div class="form-field">
-          <label>Bedrag (€)</label>
-          <input id="amount" type="number" class="input border rounded w-full px-2 py-1" />
-        </div>
-        <div class="form-field">
-          <label>Type Service(s)</label>
-          <select id="type_service" multiple class="input border rounded w-full px-2 py-1"></select>
-        </div>
+      <div class="form-field mt-2">
+        <label>Bedrag (€)</label>
+        <input id="amount" type="number" class="input border rounded w-full px-2 py-1" />
+      </div>
+      <div class="form-field mt-2">
+        <label>Type Service(s)</label>
+        <select id="type_service" multiple class="input border rounded w-full px-2 py-1"></select>
+      </div>
+      <div class="flex justify-end gap-2 mt-4">
+        <button id="cancelBtn" class="btn btn-secondary">Annuleren</button>
+        <button id="sendBtn" class="btn btn-ok">Verzenden</button>
       </div>
     `;
-    modal.insertAdjacentHTML("beforeend", extraHTML);
 
-    const planningSelect = modal.querySelector("#planningSelect");
-    const extraFields = modal.querySelector("#extraFields");
-    const typeSelect = modal.querySelector("#type_service");
+    // 🔹 Event listeners
+    const planningSelect = modalCard.querySelector("#planningSelect");
+    const typeSelect = modalCard.querySelector("#type_service");
+    const cancelBtn = modalCard.querySelector("#cancelBtn");
+    const sendBtn = modalCard.querySelector("#sendBtn");
 
-    // 🔹 2️⃣ Als planning gekozen -> haal contract op & toon extra velden
-    planningSelect.addEventListener("change", async () => {
-      const chosenId = planningSelect.value;
-      if (!chosenId) return;
-      const contractRes = await fetch(`/api/contracts/by-planning/${chosenId}`);
+    cancelBtn.onclick = () => closeModal();
+
+    // Load contract bij planningselectie
+    async function loadServices(planningId) {
+      const contractRes = await fetch(`/api/contracts/by-planning/${planningId}`);
       const contract = await contractRes.json();
-
       if (contractRes.ok && Array.isArray(contract.type_service)) {
-        typeSelect.innerHTML = contract.type_service
-          .map(ts => `<option value="${ts}">${ts}</option>`)
-          .join("");
+        typeSelect.innerHTML = contract.type_service.map(ts => `<option value="${ts}">${ts}</option>`).join("");
       } else {
         typeSelect.innerHTML = "<option disabled>Geen type services gevonden</option>";
       }
+    }
 
-      extraFields.classList.remove("hidden");
-    });
+    // Initieel vullen
+    const firstPlanning = planningSelect.value;
+    if (firstPlanning) await loadServices(firstPlanning);
+    planningSelect.onchange = async () => await loadServices(planningSelect.value);
 
-    // trigger initial load (eerste optie alvast tonen)
-    planningSelect.dispatchEvent(new Event("change"));
-
-    // 🔹 3️⃣ Knoptekst aanpassen naar “Verzenden”
-    const saveBtn = modal.querySelector("#save");
-    if (saveBtn) saveBtn.textContent = "Verzenden";
-
-    // 🔹 4️⃣ Submit handler
-    modal.querySelector("form").onsubmit = async (e) => {
-      e.preventDefault();
-
+    // 🔹 Verzenden
+    sendBtn.onclick = async () => {
       const planningId = planningSelect.value;
-      if (!planningId) {
-        showToast("Selecteer een planningrecord", "warning");
-        return;
-      }
-
       const selectedTypes = Array.from(typeSelect.selectedOptions).map(o => o.value);
-      const amountVal = parseFloat(modal.querySelector("#amount").value || 0);
+      const amountVal = parseFloat(modalCard.querySelector("#amount").value || 0);
 
-      // contract ophalen om clientId en contractId te krijgen
       const contractRes = await fetch(`/api/contracts/by-planning/${planningId}`);
       const contract = await contractRes.json();
       if (!contractRes.ok) {
@@ -1624,6 +1615,8 @@ document.getElementById("manualInvoiceBtn").onclick = async () => {
       }
     };
   });
+};
+
 
   // 🔹 5️⃣ Zorg dat de knoptekst consistent blijft
   setTimeout(() => {
