@@ -208,11 +208,16 @@ router.get("/:id", async (req, res) => {
 /** ✅ POST – nieuw contract (maakt ook 12m reeks aan) */
 router.post("/", async (req, res) => {
   try {
-    const {
+    let {
       clientId, typeService, frequency, description,
       priceEx, vatPct, lastVisit,
       maandelijkse_facturatie, invoice_day // ✅ nieuwe velden
     } = req.body;
+
+    // ✅ Automatisch beschrijving vullen op basis van typeService
+    if (!description && Array.isArray(typeService) && typeService.length) {
+      description = typeService.join(", ");
+    }
 
     const ex = parseFloat(priceEx) || 0;
     const vat = parseFloat(vatPct) || 0;
@@ -309,6 +314,11 @@ const nextVisit =
     ? computeNextVisit(lastVisit, freq || "Maand")
     : undefined;
 
+ // ✅ Automatisch beschrijving updaten als typeService is gewijzigd
+let newDescription = description;
+if (!description && Array.isArray(typeService) && typeService.length) {
+  description = typeService.join(", ");
+}   
 // contract_eind_datum blijft read-only
 const { rows } = await pool.query(
   `UPDATE contracts
