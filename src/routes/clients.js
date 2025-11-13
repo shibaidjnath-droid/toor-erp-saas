@@ -118,7 +118,10 @@ if (client.contract_lastVisit) {
     nextVisit = new Date().toISOString();
   }
 }
-
+// ✅ Automatisch beschrijving vullen op basis van contract_typeService (alleen als leeg)
+if ((!client.contract_description || !client.contract_description.trim()) && safeServices.length) {
+  client.contract_description = safeServices.join(", ");
+}
 
       const insertContract = `
         INSERT INTO contracts (
