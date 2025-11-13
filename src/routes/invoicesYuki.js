@@ -225,7 +225,10 @@ router.post("/manual", async (req, res) => {
     const sessionId = await authenticateYuki();
     const row = rows[0];
     row.sessionId = sessionId;
-
+    // ✅ Type Services uit de front-end meenemen (zonder XML-wijziging)
+if (Array.isArray(req.body.typeServices) && req.body.typeServices.length) {
+  row.description = req.body.typeServices.join(", ");
+}  
     const result = await sendInvoice(row);
     await logYukiResult(row, result);
 
