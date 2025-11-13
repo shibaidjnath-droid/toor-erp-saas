@@ -637,22 +637,29 @@ router.get("/search", async (req, res) => {
     if (!term) return res.json([]);
 
     const { rows } = await pool.query(`
-      SELECT 
-        p.id, p.date, 
-        ct.name AS client_name, 
-        ct.address, ct.house_number, ct.city,
-        c.id AS contract_id
-      FROM planning p
-      JOIN contracts c ON p.contract_id = c.id
-      JOIN contacts ct ON c.contact_id = ct.id
-      WHERE 
-        LOWER(ct.name) LIKE '%' || $1 || '%' OR
-        LOWER(ct.address) LIKE '%' || $1 || '%' OR
-        LOWER(ct.city) LIKE '%' || $1 || '%' OR
-        TO_CHAR(p.date, 'YYYY-MM-DD') LIKE '%' || $1 || '%'
-      ORDER BY p.date DESC
-      LIMIT 50
-    `, [term]);
+  SELECT 
+    p.id, 
+    p.date, 
+    ct.name AS client_name, 
+    ct.address, 
+    ct.house_number, 
+    ct.city,
+    c.id AS contract_id
+  FROM planning p
+  JOIN contracts c ON p.contract_id = c.id
+  JOIN contacts ct ON c.contact_id = ct.id
+  WHERE (
+        LOWER(ct.name) LIKE '%' || $1 || '%' 
+     OR LOWER(ct.address) LIKE '%' || $1 || '%' 
+     OR LOWER(ct.city) LIKE '%' || $1 || '%' 
+     OR TO_CHAR(p.date, 'YYYY-MM-DD') LIKE '%' || $1 || '%'
+  )
+    AND p.status NOT IN ('Gepland','Geannuleerd')
+    AND (p.invoiced = false OR p.invoiced IS NULL)
+    AND (c.maandelijkse_facturatie = false OR c.maandelijkse_facturatie IS NULL)
+  ORDER BY p.date DESC
+  LIMIT 50
+`, [term]);
 
     res.json(rows);
   } catch (err) {

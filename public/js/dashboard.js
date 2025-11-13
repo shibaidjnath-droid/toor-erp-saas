@@ -1576,36 +1576,38 @@ document.getElementById("manualInvoiceBtn").onclick = async () => {
     const btnSend        = card.querySelector("#sendManualInvoiceBtn");
 
     // 2) Contract + services laden voor de (initiële) selectie
-    async function loadContractServices(planningId) {
-      if (!planningId) return;
-      try {
-        const contractRes = await fetch(`/api/contracts/by-planning/${planningId}?_=${Date.now()}`);
-        const contract = await contractRes.json();
+  async function loadContractServices(planningId) {
+  if (!planningId) return;
+  try {
+    const contractRes = await fetch(`/api/contracts/by-planning/${planningId}?_=${Date.now()}`);
+    const contract = await contractRes.json();
 
-        if (!contractRes.ok) {
-          typeSelect.innerHTML = `<option disabled>Geen type services gevonden</option>`;
-          showToast("Fout bij ophalen contract", "error");
-          return null;
-        }
-
-        // type_service kan ARRAY of STRING zijn; beide ondersteunen
-        const svc = Array.isArray(contract.type_service)
-          ? contract.type_service
-          : (typeof contract.type_service === "string" && contract.type_service.trim() !== "")
-            ? [contract.type_service]
-            : [];
-
-        typeSelect.innerHTML = svc.length
-          ? svc.map(ts => `<option value="${ts}" selected>${ts}</option>`).join("")
-          : `<option disabled>Geen type services gevonden</option>`;
-
-        return contract; // geef door aan caller
-      } catch (e) {
-        typeSelect.innerHTML = `<option disabled>Services laden mislukt</option>`;
-        showToast("Services laden mislukt", "error");
-        return null;
-      }
+    if (!contractRes.ok) {
+      typeSelect.innerHTML = `<option disabled>Geen type services gevonden</option>`;
+      showToast("Fout bij ophalen contract", "error");
+      return null;
     }
+
+    // 🔸 Altijd ALLE services tonen (niet alleen van contract)
+    const allServices = settings.typeServices || [];
+    const selected = Array.isArray(contract.type_service)
+      ? contract.type_service
+      : (typeof contract.type_service === "string" && contract.type_service.trim() !== "")
+        ? [contract.type_service]
+        : [];
+
+    typeSelect.innerHTML = allServices
+      .map(ts => `<option value="${ts}" ${selected.includes(ts) ? "selected" : ""}>${ts}</option>`)
+      .join("");
+
+    return contract;
+  } catch (e) {
+    typeSelect.innerHTML = `<option disabled>Services laden mislukt</option>`;
+    showToast("Services laden mislukt", "error");
+    return null;
+  }
+}
+
 
     // init load voor eerste optie
     let currentContract = await loadContractServices(planningSelect.value);
