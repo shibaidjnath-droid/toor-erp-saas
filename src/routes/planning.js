@@ -626,5 +626,33 @@ router.get("/tag-preview", async (req, res) => {
   }
 });
 
+/** 🔍 Zoek planning op naam, adres of datum */
+router.get("/search", async (req, res) => {
+  try {
+    const { term } = req.query;
+    if (!term) return res.status(400).json({ error: "term is verplicht" });
+
+    const like = `%${term.toLowerCase()}%`;
+    const { rows } = await pool.query(
+      `SELECT 
+         p.id, p.date, p.status,
+         c.name AS client_name, c.address
+       FROM planning p
+       JOIN contracts ct ON p.contract_id = ct.id
+       JOIN contacts c ON ct.contact_id = c.id
+       WHERE (LOWER(c.name) LIKE $1 OR LOWER(c.address) LIKE $1 OR CAST(p.date AS TEXT) LIKE $1)
+       ORDER BY p.date DESC
+       LIMIT 25`,
+      [like]
+    );
+
+    res.json(rows);
+  } catch (err) {
+    console.error("❌ Fout bij planning search:", err.message);
+    res.status(500).json({ error: "Databasefout bij planning search" });
+  }
+});
+
+
 
 export default router;

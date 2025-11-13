@@ -407,4 +407,26 @@ router.patch("/:id/override", async (req, res) => {
   }
 });
 
+/** ✅ GET – contractdetails via planning-id (voor facturatie) */
+router.get("/by-planning/:planningId", async (req, res) => {
+  try {
+    const { planningId } = req.params;
+    const { rows } = await pool.query(
+      `SELECT ct.*, c.id AS client_id
+       FROM contracts ct
+       JOIN planning p ON p.contract_id = ct.id
+       JOIN contacts c ON ct.contact_id = c.id
+       WHERE p.id = $1
+       LIMIT 1`,
+      [planningId]
+    );
+    if (!rows.length) return res.status(404).json({ error: "Contract niet gevonden" });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error("❌ Fout bij ophalen contract by planning:", err.message);
+    res.status(500).json({ error: "Databasefout bij ophalen contract" });
+  }
+});
+
+
 export default router;

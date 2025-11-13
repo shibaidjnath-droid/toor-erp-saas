@@ -1503,28 +1503,92 @@ tableContainer.innerHTML = tableHTML(
     renderFiltered();
 
     // ---------- 🧾 Factureer een klant ----------
-    document.getElementById("manualInvoiceBtn").onclick = async () => {
-      openModal("Factureer een klant", [
-        { id: "search", label: "Zoek planning (naam, adres, datum)", type: "text", placeholder: "Bijv. Jansen, Dordrecht, 2025-11-10" },
-        { id: "amount", label: "Bedrag (€)", type: "number" },
-        { id: "description", label: "Beschrijving", type: "text" },
-      ], async (vals) => {
-        const body = {
-          search: vals.search,
-          amount: parseFloat(vals.amount || 0),
-          description: vals.description,
-        };
-        const res = await fetch("/api/invoices-yuki/manual", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        const data = await res.json();
-        if (res.ok) showToast("Factuur verzonden naar Yuki", "success");
-        else showToast(data.error || "Fout bij aanmaken factuur", "error");
-        await renderInvoices();
+document.getElementById("manualInvoiceBtn").onclick = async () => {
+  // 1️⃣ Modal met zoekbalk + bedrag + multiselect Type Service
+  openModal("Factureer een klant", [
+    {
+      id: "search",
+      label: "Zoek planning (klantnaam, adres of datum)",
+      type: "text",
+      placeholder: "Bijv. Jansen, Dordrecht, 2025-11-10",
+    },
+    { id: "amount", label: "Bedrag (€)", type: "number" },
+    {
+      id: "type_service",
+      label: "Type Service (één of meerdere)",
+      type: "multiselect",
+      options: [],
+    },
+  ], async (vals) => {
+    // 2️⃣ Validate
+    if (!vals.search) {
+      showToast("Zoekterm is verplicht", "warning");
+      return;
+    }
+
+    // 🔍 3️⃣ Zoeken in planning op naam, adres of datum
+    const searchRes = await fetch(`/api/planning/search?term=${encodeURIComponent(vals.search)}`);
+    const results = await searchRes.json();
+
+    if (!searchRes.ok || !Array.isArray(results) || !results.length) {
+      showToast(results.error || "Geen planning gevonden", "warning");
+      return;
+    }
+
+    // 4️⃣ Laat gebruiker planning kiezen
+    const planningOptions = results.map(p => ({
+      id: p.id,
+      label: `${p.client_name} – ${p.address || ""} (${p.date.split("T")[0]})`
+    }));
+
+    openModal("Selecteer Planning", [
+      {
+        id: "planning",
+        label: "Kies planningrecord",
+        type: "select",
+        options: planningOptions.map(p => p.label),
+      }
+    ], async (vals2) => {
+      const chosen = planningOptions.find(p => p.label === vals2.planning);
+      if (!chosen) {
+        showToast("Geen planning geselecteerd", "warning");
+        return;
+      }
+
+      // 5️⃣ Haal contractdetails (type_service) van planning op
+      const contractRes = await fetch(`/api/contracts/by-planning/${chosen.id}`);
+      const contract = await contractRes.json();
+
+      if (contractRes.ok && Array.isArray(contract.type_service)) {
+        const typeServiceSelect = document.querySelector("select#type_service");
+        typeServiceSelect.innerHTML = contract.type_service
+          .map(ts => `<option value="${ts}">${ts}</option>`)
+          .join("");
+      }
+
+      // 6️⃣ Verzenden naar backend
+      const body = {
+        clientId: contract.client_id,
+        contractId: contract.id,
+        planningId: chosen.id,
+        amount: parseFloat(vals.amount || 0),
+        type_service: Array.from(document.querySelector("#type_service").selectedOptions).map(o => o.value),
+      };
+
+      const res = await fetch("/api/invoices-yuki/manual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
       });
-    };
+      const data = await res.json();
+
+      if (res.ok) showToast("Factuur verzonden naar Yuki", "success");
+      else showToast(data.error || "Fout bij aanmaken factuur", "error");
+      await renderInvoices();
+    });
+  });
+};
+
 function renderStatusBadge(status) {
   const color =
     status === "Betaald" ? "bg-green-100 text-green-700" :
