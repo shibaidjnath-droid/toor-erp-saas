@@ -1492,7 +1492,12 @@ if (!Array.isArray(tags) || !tags.length) {
 tableContainer.innerHTML = tableHTML(
   ["Klant", "Planning", "Bedrag", "Datum", "Methode", "Status"],
   rows
+
 );
+// ✅ Klikbare rijen om details te openen
+tableContainer.querySelectorAll("tbody tr").forEach((tr, i) => {
+  tr.addEventListener("click", () => openInvoiceDetail(invoices[i]));
+});
 
     }
 
