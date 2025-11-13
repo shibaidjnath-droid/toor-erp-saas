@@ -1504,6 +1504,7 @@ tableContainer.innerHTML = tableHTML(
 
 // ---------- 🧾 Factureer een klant ----------
 document.getElementById("manualInvoiceBtn").onclick = async () => {
+  // Fase 1: zoekterm vragen via openModal (jouw bestaande UX)
   openModal("Factureer een klant", [
     {
       id: "search",
@@ -1512,214 +1513,161 @@ document.getElementById("manualInvoiceBtn").onclick = async () => {
       placeholder: "Bijv. Jansen, Dordrecht, 2025-11-10",
     },
   ], async (vals) => {
-    // 🔍 1️⃣ Zoeken in planning
     if (!vals.search) {
       showToast("Zoekterm is verplicht", "warning");
       return;
     }
+
+    // 1) Planning zoeken (met cache-buster)
     const searchRes = await fetch(`/api/planning/search?term=${encodeURIComponent(vals.search)}&_=${Date.now()}`);
-    const results = await searchRes.json();
+    let results = [];
+    try { results = await searchRes.json(); } catch { results = []; }
 
     if (!searchRes.ok || !Array.isArray(results) || !results.length) {
-      showToast(results.error || "Geen planning gevonden", "warning");
+      showToast((results && results.error) || "Geen planning gevonden", "warning");
       return;
     }
 
-    // 🔹 Planning dropdown binnen dezelfde modal
-    const modal = document.querySelector(".modal-card");
-    const extraHTML = `
-      <div class="form-field mt-3">
+    // Fase 2: eigen overlay (zoals bij jouw tag-bulk) met selectie + velden + verzendknop
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    const card = document.createElement("div");
+    card.className = "modal-card";
+    card.style.width = "560px"; // iets ruimer
+    card.innerHTML = `
+      <h3 class="text-lg font-semibold mb-3">Selecteer planning & vul gegevens</h3>
+
+      <div class="form-field">
         <label>Kies planningrecord</label>
         <select id="planningSelect" class="input border rounded w-full px-2 py-1">
-          ${results.map(p => 
-            `<option value="${p.id}">${p.client_name} – ${p.address || ""} (${p.date.split("T")[0]})</option>`
+          ${results.map(p =>
+            `<option value="${p.id}">
+              ${p.client_name} – ${(p.address || "")} (${(p.date || "").split("T")[0] || ""})
+            </option>`
           ).join("")}
         </select>
       </div>
-      <div id="extraFields" class="mt-3 hidden">
-        <div class="form-field">
-          <label>Bedrag (€)</label>
-          <input id="amount" type="number" class="input border rounded w-full px-2 py-1" />
-        </div>
-        <div class="form-field">
-          <label>Type Service(s)</label>
-          <select id="type_service" multiple class="input border rounded w-full px-2 py-1"></select>
-        </div>
+
+      <div class="form-field mt-3">
+        <label>Bedrag (€)</label>
+        <input id="amount" type="number" step="0.01" class="input border rounded w-full px-2 py-1" />
+      </div>
+
+      <div class="form-field mt-3">
+        <label>Type Service(s)</label>
+        <select id="type_service" multiple class="input border rounded w-full px-2 py-1">
+          <option disabled>Services laden...</option>
+        </select>
+      </div>
+
+      <div class="flex justify-end gap-2 mt-4">
+        <button id="cancelManualInvoiceBtn" class="btn btn-secondary">Annuleren</button>
+        <button id="sendManualInvoiceBtn" class="btn btn-ok">Verzenden</button>
       </div>
     `;
-    modal.insertAdjacentHTML("beforeend", extraHTML);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
 
-    const planningSelect = modal.querySelector("#planningSelect");
-    const extraFields = modal.querySelector("#extraFields");
-    const typeSelect = modal.querySelector("#type_service");
+    // Hulpfuncties / refs
+    const planningSelect = card.querySelector("#planningSelect");
+    const amountInput    = card.querySelector("#amount");
+    const typeSelect     = card.querySelector("#type_service");
+    const btnCancel      = card.querySelector("#cancelManualInvoiceBtn");
+    const btnSend        = card.querySelector("#sendManualInvoiceBtn");
 
-    // 🔹 2️⃣ Als planning gekozen -> haal contract op & toon extra velden
-    planningSelect.addEventListener("change", async () => {
-      const chosenId = planningSelect.value;
-      if (!chosenId) return;
-      const contractRes = await fetch(`/api/contracts/by-planning/${chosenId}?_=${Date.now()}`);
-      const contract = await contractRes.json();
+    // 2) Contract + services laden voor de (initiële) selectie
+    async function loadContractServices(planningId) {
+      if (!planningId) return;
+      try {
+        const contractRes = await fetch(`/api/contracts/by-planning/${planningId}?_=${Date.now()}`);
+        const contract = await contractRes.json();
 
-      if (contractRes.ok && Array.isArray(contract.type_service)) {
-        typeSelect.innerHTML = contract.type_service
-          .map(ts => `<option value="${ts}">${ts}</option>`)
-          .join("");
-      } else {
-        typeSelect.innerHTML = "<option disabled>Geen type services gevonden</option>";
+        if (!contractRes.ok) {
+          typeSelect.innerHTML = `<option disabled>Geen type services gevonden</option>`;
+          showToast("Fout bij ophalen contract", "error");
+          return null;
+        }
+
+        // type_service kan ARRAY of STRING zijn; beide ondersteunen
+        const svc = Array.isArray(contract.type_service)
+          ? contract.type_service
+          : (typeof contract.type_service === "string" && contract.type_service.trim() !== "")
+            ? [contract.type_service]
+            : [];
+
+        typeSelect.innerHTML = svc.length
+          ? svc.map(ts => `<option value="${ts}" selected>${ts}</option>`).join("")
+          : `<option disabled>Geen type services gevonden</option>`;
+
+        return contract; // geef door aan caller
+      } catch (e) {
+        typeSelect.innerHTML = `<option disabled>Services laden mislukt</option>`;
+        showToast("Services laden mislukt", "error");
+        return null;
       }
+    }
 
-      extraFields.classList.remove("hidden");
+    // init load voor eerste optie
+    let currentContract = await loadContractServices(planningSelect.value);
+
+    // wisselen van planning
+    planningSelect.addEventListener("change", async () => {
+      currentContract = await loadContractServices(planningSelect.value);
     });
 
-    // trigger initial load (eerste optie alvast tonen)
-    planningSelect.dispatchEvent(new Event("change"));
+    // Annuleren
+    btnCancel.onclick = () => overlay.remove();
 
-    // 🔹 3️⃣ Knoptekst aanpassen naar “Verzenden”
-    const saveBtn = modal.querySelector("#save");
-    if (saveBtn) saveBtn.textContent = "Verzenden";
-
-    // 🔹 4️⃣ Submit handler
-    modal.querySelector("form").onsubmit = async (e) => {
-      e.preventDefault();
-
+    // Verzenden
+    btnSend.onclick = async () => {
       const planningId = planningSelect.value;
-      if (!planningId) {
-        showToast("Selecteer een planningrecord", "warning");
-        return;
+      if (!planningId) return showToast("Selecteer een planningrecord", "warning");
+
+      const amountVal = parseFloat(amountInput.value || "0");
+      if (!amountVal || isNaN(amountVal) || amountVal <= 0) {
+        return showToast("Voer een geldig bedrag in", "warning");
+      }
+
+      // Als om wat voor reden currentContract nog leeg is: fallback ophalen
+      if (!currentContract) {
+        const fallbackRes = await fetch(`/api/contracts/by-planning/${planningId}?_=${Date.now()}`);
+        currentContract = await fallbackRes.json();
+        if (!fallbackRes.ok) return showToast("Fout bij ophalen contract", "error");
       }
 
       const selectedTypes = Array.from(typeSelect.selectedOptions).map(o => o.value);
-      const amountVal = parseFloat(modal.querySelector("#amount").value || 0);
-
-      // contract ophalen om clientId en contractId te krijgen
-      const contractRes = await fetch(`/api/contracts/by-planning/${planningId}`);
-      const contract = await contractRes.json();
-      if (!contractRes.ok) {
-        showToast("Fout bij ophalen contract", "error");
-        return;
-      }
 
       const body = {
-        clientId: contract.client_id,
-        contractId: contract.id,
+        clientId:   currentContract.client_id,
+        contractId: currentContract.id,
         planningId,
-        amount: amountVal,
+        amount:     amountVal,
         typeServices: selectedTypes || [],
       };
 
-      const res = await fetch("/api/invoices-yuki/manual", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      try {
+        const res  = await fetch("/api/invoices-yuki/manual", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
 
-      const data = await res.json();
-      if (res.ok) {
-        showToast("Factuur verzonden naar Yuki", "success");
-        closeModal();
-        await renderInvoices();
-      } else {
-        showToast(data.error || "Fout bij aanmaken factuur", "error");
+        if (res.ok) {
+          showToast("Factuur verzonden naar Yuki", "success");
+          overlay.remove();
+          await renderInvoices?.();
+        } else {
+          showToast(data.error || "Fout bij aanmaken factuur", "error");
+        }
+      } catch (e) {
+        showToast("Onverwachte fout bij aanmaken factuur", "error");
       }
     };
   });
 
-  // 🔹 5️⃣ Zorg dat de knoptekst consistent blijft
-  setTimeout(() => {
-    const modal = document.querySelector(".modal-card");
-    const saveBtn = modal?.querySelector("#save");
-    if (saveBtn) saveBtn.textContent = "Opslaan";
-  }, 100);
-};
-
-
-function renderStatusBadge(status) {
-  const color =
-    status === "Betaald" ? "bg-green-100 text-green-700" :
-    status === "Fout" ? "bg-red-100 text-red-700" :
-    status === "Verzonden" ? "bg-blue-100 text-blue-700" :
-    "bg-gray-100 text-gray-700";
-
-  return `<span class="px-2 py-1 rounded text-xs font-medium ${color}">
-            ${status || "-"}
-          </span>`;
-}
-
-    // ---------- 🏷️ Bulk Facturatie per Tag ----------
-document.getElementById("tagInvoiceBtn").onclick = async () => {
-  openModal("Bulk Facturatie per Tag", [
-    { id: "tag", label: "Selecteer Tag", type: "select", options: tags.map(t => t.name) }
-  ], async (vals) => {
-    const tag = vals.tag;
-    if (!tag) {
-      showToast("Geen tag geselecteerd", "warning");
-      return;
-    }
-
-    // 🧩 Haal planningen op voor deze tag
-    const previewRes = await fetch(`/api/planning/tag-preview?tag=${encodeURIComponent(tag)}`);
-    const previewData = await previewRes.json();
-    if (!previewRes.ok || !Array.isArray(previewData) || !previewData.length) {
-      showToast(previewData.error || "Geen planningen gevonden", "warning");
-      return;
-    }
-
-    // 🧾 Bouw tabel met checkboxes
-    const checkboxes = previewData.map(p => ({
-      id: p.id,
-      label: `${p.client_name} – ${p.description} (€${p.price_inc}) op ${p.date.split("T")[0]}`
-    }));
-
-    const modalContent = document.createElement("div");
-    modalContent.innerHTML = `
-      <p class="mb-3 text-gray-700 dark:text-gray-300">Selecteer welke planningen je wilt factureren (Tag: ${tag}):</p>
-      <div class="max-h-64 overflow-y-auto border p-2 rounded space-y-1 dark:border-gray-700">
-        ${checkboxes.map(c =>
-          `<label class="flex items-center gap-2">
-             <input type="checkbox" class="chkPlanning" value="${c.id}" checked>
-             <span>${c.label}</span>
-           </label>`
-        ).join("")}
-      </div>
-      <div class="flex justify-end gap-2 mt-4">
-        <button id="cancelTagBulkBtn" class="btn btn-secondary">Annuleren</button>
-        <button id="confirmTagBulkBtn" class="btn btn-ok">Verzenden</button>
-      </div>
-    `;
-
-    const modalOverlay = document.createElement("div");
-    modalOverlay.className = "modal-overlay";
-    modalOverlay.appendChild(modalContent);
-    document.body.appendChild(modalOverlay);
-
-    // ❌ Annuleren
-    document.getElementById("cancelTagBulkBtn").onclick = () => modalOverlay.remove();
-
-    // ✅ Verzenden
-    document.getElementById("confirmTagBulkBtn").onclick = async () => {
-      const selectedIds = [...modalContent.querySelectorAll(".chkPlanning:checked")].map(i => i.value);
-      if (!selectedIds.length) {
-        showToast("Geen planningen geselecteerd", "warning");
-        return;
-      }
-
-      showToast(`Versturen van ${selectedIds.length} facturen gestart...`, "info");
-
-      const res = await fetch("/api/invoices-yuki/tag", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tag, selectedIds }),
-      });
-
-      const data = await res.json();
-      modalOverlay.remove();
-
-      if (res.ok) showToast(data.summary || "Facturatie gestart", "success");
-      else showToast(data.error || "Fout bij verzenden", "error");
-
-      await renderInvoices();
-    };
-  });
+  // ❌ Belangrijk: GEEN setTimeout meer dat de save-knop terugzet naar 'Opslaan'
+  // (Dat veroorzaakte dat de openModal-logica jouw eigen flow overschreef)
 };
 
 
