@@ -420,6 +420,10 @@ router.patch("/:id/override", async (req, res) => {
 /** ✅ GET – contractdetails via planning-id (voor facturatie) */
 router.get("/by-planning/:planningId", async (req, res) => {
   try {
+     // ⛔️ Cache volledig uitschakelen
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
     const { planningId } = req.params;
     const { rows } = await pool.query(
       `SELECT ct.*, c.id AS client_id

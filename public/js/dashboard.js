@@ -1557,7 +1557,7 @@ document.getElementById("manualInvoiceBtn").onclick = async () => {
     planningSelect.addEventListener("change", async () => {
       const chosenId = planningSelect.value;
       if (!chosenId) return;
-      const contractRes = await fetch(`/api/contracts/by-planning/${chosenId}`);
+      const contractRes = await fetch(`/api/contracts/by-planning/${chosenId}?_=${Date.now()}`);
       const contract = await contractRes.json();
 
       if (contractRes.ok && Array.isArray(contract.type_service)) {
