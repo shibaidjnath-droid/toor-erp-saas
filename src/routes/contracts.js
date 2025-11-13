@@ -215,8 +215,8 @@ router.post("/", async (req, res) => {
     } = req.body;
 
     // ✅ Automatisch beschrijving vullen op basis van typeService
-    if (!description && Array.isArray(typeService) && typeService.length) {
-      description = typeService.join(", ");
+    if ((!description || !description.trim()) && Array.isArray(typeService) && typeService.length) {
+  description = typeService.join(", ");
     }
 
     const ex = parseFloat(priceEx) || 0;
