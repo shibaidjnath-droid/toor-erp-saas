@@ -1446,9 +1446,9 @@ if (!Array.isArray(tags) || !tags.length) {
           <select id="filterMethod" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
             <option value="">Methode</option>
             <option value="maandelijks">Maandelijks</option>
-            <option value="per_klant">Per klant</option>
-            <option value="per_tag">Per tag</option>
-            <option value="per_periode">Per periode</option>
+            <option value="Klant">Per klant</option>
+            <option value="Tag">Per tag</option>
+            <option value="Periode">Per periode</option>
           </select>
 
           <button id="manualInvoiceBtn" class="bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700">🧾 Factureer een klant</button>
@@ -1790,7 +1790,10 @@ document.getElementById("periodInvoiceBtn").onclick = async () => {
     showToast("Fout bij laden facturen", "error");
   }
 }
-
+// ✅ Klikbare rijen om details te openen
+list.querySelectorAll("tbody tr").forEach((tr, i) => {
+  tr.addEventListener("click", () => openInvoiceDetail(invoices[i]));
+});
 // ---------- 🧾 Factuur detail ----------
 function openInvoiceDetail(i) {
   openModal(`Factuur – ${i.client_name || "-"}`, [
