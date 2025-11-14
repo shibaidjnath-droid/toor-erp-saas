@@ -1446,9 +1446,9 @@ if (!Array.isArray(tags) || !tags.length) {
           <select id="filterMethod" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
             <option value="">Methode</option>
             <option value="maandelijks">Maandelijks</option>
-            <option value="Klant">Per klant</option>
-            <option value="Tag">Per tag</option>
-            <option value="Periode">Per periode</option>
+            <option value="klant">Per klant</option>
+            <option value="tag">Per tag</option>
+            <option value="periode">Per periode</option>
           </select>
 
           <button id="manualInvoiceBtn" class="bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700">🧾 Factureer een klant</button>
@@ -1496,15 +1496,15 @@ tableContainer.innerHTML = tableHTML(
 );
 // ✅ Klikbare rijen om details te openen
 tableContainer.querySelectorAll("tbody tr").forEach((tr, i) => {
-  tr.addEventListener("click", () => openInvoiceDetail(invoices[i]));
+  tr.addEventListener("click", () => openInvoiceDetail(filtered[i]));
 });
 
     }
 
-    ["invoiceSearch", "filterPeriod", "filterMethod"].forEach(id =>
-      document.getElementById(id).addEventListener("input", renderFiltered)
-    );
-
+   ["invoiceSearch", "filterPeriod", "filterMethod"].forEach(id => {
+  const el = document.getElementById(id);
+  el.addEventListener(el.tagName === "SELECT" ? "change" : "input", renderFiltered);
+});
     renderFiltered();
 
 // ---------- 🧾 Factureer een klant ----------
