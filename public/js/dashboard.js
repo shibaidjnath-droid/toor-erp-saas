@@ -1459,12 +1459,7 @@ if (!Array.isArray(tags) || !tags.length) {
 
       <div class="overflow-y-auto max-h-[70vh] relative" id="invoicesTable"></div>
     `;
-    console.log("Filter debug:", {
-  search: s,
-  period: p,
-  method: m,
-  availableMethods: invoices.map(i => i.method)
-});
+
 
     const tableContainer = document.getElementById("invoicesTable");
 
@@ -1473,6 +1468,13 @@ if (!Array.isArray(tags) || !tags.length) {
       const s = document.getElementById("invoiceSearch").value.toLowerCase();
       const p = document.getElementById("filterPeriod").value.toLowerCase();
       const m = document.getElementById("filterMethod").value.toLowerCase();
+
+    console.log("Filter debug:", {
+    search: s,
+    period: p,
+    method: m,
+    availableMethods: invoices.map(i => i.method)
+  });
 
       const filtered = invoices.filter(inv => {
         const matchesSearch = !s || Object.values(inv).join(" ").toLowerCase().includes(s);
