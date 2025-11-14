@@ -1,0 +1,24 @@
+2025/11/14-23:05:01.944 71f8 Reusing MANIFEST C:\Users\shiba\Desktop\TOOR ERP\TOOR ERP Kristalhelder TEST\sessions\session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2025/11/14-23:05:01.946 71f8 Recovering log #1720
+2025/11/14-23:05:02.096 71f8 Reusing old log C:\Users\shiba\Desktop\TOOR ERP\TOOR ERP Kristalhelder TEST\sessions\session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/001720.log 
+2025/11/14-23:05:02.097 71f8 Delete type=2 #1708
+2025/11/14-23:05:02.097 71f8 Delete type=2 #1709
+2025/11/14-23:05:02.097 71f8 Delete type=2 #1710
+2025/11/14-23:05:02.097 71f8 Delete type=2 #1711
+2025/11/14-23:05:02.097 71f8 Delete type=2 #1712
+2025/11/14-23:05:02.097 71f8 Delete type=2 #1713
+2025/11/14-23:05:02.097 71f8 Delete type=2 #1714
+2025/11/14-23:05:02.097 71f8 Delete type=2 #1715
+2025/11/14-23:05:02.097 71f8 Delete type=2 #1716
+2025/11/14-23:05:02.097 71f8 Delete type=2 #1717
+2025/11/14-23:05:02.097 71f8 Delete type=2 #1722
+2025/11/14-23:05:08.777 65cc Level-0 table #1745: started
+2025/11/14-23:05:08.799 65cc Level-0 table #1745: 284995 bytes OK
+2025/11/14-23:05:08.801 65cc Delete type=0 #1720
+2025/11/14-23:05:08.803 65cc Manual compaction at level-0 from '\x00a\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00b\x00\x00\x00' @ 0 : 0; will stop at '\x00a\x00\x00\x05' @ 3295160 : 1
+2025/11/14-23:05:08.803 65cc Compacting 1@0 + 0@1 files
+2025/11/14-23:05:08.832 65cc Generated table #1746@0: 4209 keys, 104079 bytes
+2025/11/14-23:05:08.839 65cc Generated table #1747@0: 307 keys, 30326 bytes
+2025/11/14-23:05:08.839 65cc Compacted 1@0 + 0@1 files => 134405 bytes
+2025/11/14-23:05:08.841 65cc compacted to: files[ 0 2 34 0 0 0 0 ]
+2025/11/14-23:05:08.842 65cc Manual compaction at level-0 from '\x00a\x00\x00\x05' @ 3295160 : 1 .. '\x00b\x00\x00\x00' @ 0 : 0; will stop at (end)

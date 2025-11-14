@@ -18,7 +18,7 @@ import quotesRouter from './routes/quotes.js';
 import planningRouter from './routes/planning.js';
 import whatsappRouter from "./routes/whatsapp.js";
 import invoicesYukiRouter from "./routes/invoicesYuki.js";
-
+import addressRouter from "./routes/address.js";
 // 🔥 NIEUW — deze ontbraken
 import contractsRouter from './routes/contracts.js';
 import membersRouter from './routes/members.js';
@@ -49,6 +49,7 @@ app.use('/api/quotes', quotesRouter);
 app.use('/api/planning', planningRouter);
 //app.use('/dashboard/api/planning', planningRouter);
 app.use("/api/invoices-yuki", invoicesYukiRouter);
+app.use("/api/address", addressRouter);
 
 // 🔥 NIEUW mounts
 app.use('/api/contracts', contractsRouter);

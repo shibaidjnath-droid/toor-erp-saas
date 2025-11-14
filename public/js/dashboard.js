@@ -15,41 +15,28 @@ let settings = {
   tags: ["Particulier", "Zakelijk", "VvE"],
 };
 
-// ---------- Dummydata ----------
-let clients = [
 
-];
+let clients = [];
+let contracts = [];
+let planning = [];
+let invoices = [];
+let members = [];
+let emailLog = [];
+let leads = [];
+let quotes = [];
+let tags = [];
 
-let contracts = [
-  
-];
-
-let planning = [
-  
-];
-
-let invoices = [
-  
-];
-
-let members = [
- 
-];
-
-let emailLog = [
-];
-
-let leads = [
-  
-];
-
-let quotes = [
-  
-];
-
-let tags = [
-
-];
+// 🔁 Universele fetch-functie om altijd actuele data te laden
+async function fetchClients() {
+  try {
+    const res = await fetch("/api/clients");
+    if (!res.ok) throw new Error("Fout bij ophalen klanten");
+    clients = await res.json();
+  } catch (err) {
+    console.error("❌ Fout bij herladen klanten:", err);
+    showToast("Fout bij herladen klanten", "error");
+  }
+}
 
 // ---------- Initialisatie ----------
 window.addEventListener("load", () => {
@@ -301,76 +288,180 @@ async function renderClients() {
   renderFiltered();
 
   // ✅ Nieuw klant toevoegen (volledige bestaande logica)
-  document.getElementById("newClientBtn").onclick = () => {
-    openModal("Nieuwe Klant", [
-      { id: "name", label: "Naam" },
-      { id: "email", label: "E-mail" },
-      { id: "phone", label: "Telefoon" },
-      { id: "address", label: "Adres" },
-      { id: "houseNumber", label: "Huisnummer" },
-      { id: "postcode", label: "Postcode" },
-      { id: "city", label: "Plaats" },
-      { id: "typeKlant", label: "Type Klant", type: "select", options: ["Particulier", "Zakelijk"], value: "Particulier" },
-      { id: "bedrijfsnaam", label: "Bedrijfsnaam", hidden: true },
-      { id: "kvk", label: "KvK", hidden: true },
-      { id: "btw", label: "BTW-nummer", hidden: true },
-      { id: "verzendMethode", label: "Verzendmethode", type: "select", options: ["Whatsapp", "Email"], value: "Email" },
-      { id: "tag", label: "Tag", type: "select", options: settings.tags },
-      { id: "contract_typeService", label: "Contract: Type Service", type: "multiselect", options: settings.typeServices },
-      { id: "contract_frequency", label: "Contract: Frequentie", type: "select", options: settings.frequencies },
-      { id: "contract_description", label: "Contract: Beschrijving" },
-      { id: "contract_priceInc", label: "Contract: Prijs incl. (€)" },
-      { id: "contract_vat", label: "Contract: BTW (%)", type: "number", value: 21, disabled: true },
-      { id: "contract_lastVisit", label: "Contract: Laatste bezoek", type: "date" },
-    ], async (vals) => {
-      try {
-        const res = await fetch("/api/clients", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(vals),
-        });
-        if (!res.ok) return showToast("Fout bij opslaan klant", "error");
+document.getElementById("newClientBtn").onclick = () => {
+  openModal("Nieuwe Klant", [
+    { id: "name", label: "Naam" },
+    { id: "email", label: "E-mail" },
+    { id: "phone", label: "Telefoon" },
+    { id: "address", label: "Adres" },
+    { id: "houseNumber", label: "Huisnummer" },
+    { id: "postcode", label: "Postcode" },
+    { id: "city", label: "Plaats" },
+    { id: "typeKlant", label: "Type Klant", type: "select", options: ["Particulier", "Zakelijk"], value: "Particulier" },
+    { id: "bedrijfsnaam", label: "Bedrijfsnaam", hidden: true },
+    { id: "kvk", label: "KvK", hidden: true },
+    { id: "btw", label: "BTW-nummer", hidden: true },
+    { id: "verzendMethode", label: "Verzendmethode", type: "select", options: ["Whatsapp", "Email"], value: "Email" },
+    { id: "tag", label: "Tag", type: "select", options: settings.tags },
+    { id: "contract_typeService", label: "Contract: Type Service", type: "multiselect", options: settings.typeServices },
+    { id: "contract_frequency", label: "Contract: Frequentie", type: "select", options: settings.frequencies },
+    { id: "contract_priceInc", label: "Contract: Prijs incl. (€)" },
+    { id: "contract_vat", label: "Contract: BTW (%)", type: "number", value: 21, disabled: true },
+    { id: "contract_lastVisit", label: "Contract: Laatste bezoek", type: "date" },
+  ], async (vals) => {
+    try {
+      const res = await fetch("/api/clients", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(vals),
+      });
+      if (!res.ok) return showToast("Fout bij opslaan klant", "error");
 
-        const klant = await res.json();
-        showToast(`Klant ${klant.name} aangemaakt`, "success");
-        clients.push(klant);
-        if (vals.contract_typeService || vals.contract_description) {
-          const cRes = await fetch("/api/contracts");
-          if (cRes.ok) contracts = await cRes.json();
-        }
-        renderClients();
-      } catch (err) {
-        console.error("❌ Opslaan klant:", err);
-        showToast("Onverwachte fout", "error");
-      }
-    });
+      const klant = await res.json();
+      const klantNaam = klant.name || klant.bedrijfsnaam || "(Onbekende naam)";
+      showToast(`Klant ${klantNaam} aangemaakt`, "success");
 
-    // 🔄 Automatische veldlogica (Type Klant → BTW% en bedrijfsvelden)
-    setTimeout(() => {
-      const modal = document.querySelector(".modal-card");
-      if (!modal) return;
-      const typeSelect = modal.querySelector("select[name='typeKlant']");
-      const vatSelect = modal.querySelector("select[name='contract_vat']");
-      const bedrijfsnaamField = modal.querySelector("[name='bedrijfsnaam']")?.closest(".form-field");
-      const kvkField = modal.querySelector("[name='kvk']")?.closest(".form-field");
-      const btwField = modal.querySelector("[name='btw']")?.closest(".form-field");
-      function updateFields() {
-        if (typeSelect.value === "Zakelijk") {
-          vatSelect.value = "21";
-          bedrijfsnaamField.style.display = "";
-          kvkField.style.display = "";
-          btwField.style.display = "";
-        } else {
-          vatSelect.value = "0";
-          bedrijfsnaamField.style.display = "none";
-          kvkField.style.display = "none";
-          btwField.style.display = "none";
+      // ✅ Herlaad volledige lijst uit database zodat nieuwe direct zichtbaar is
+      await fetchClients();
+      renderClients();
+
+      // ✅ Indien contractvelden ingevuld zijn → contractlijst vernieuwen
+      if (vals.contract_typeService || vals.contract_description) {
+        const cRes = await fetch("/api/contracts");
+        if (cRes.ok) {
+          contracts = await cRes.json();
+          showToast("Contract gekoppeld en bijgewerkt", "success");
         }
       }
-      updateFields();
-      typeSelect.addEventListener("change", updateFields);
-    }, 100);
+    } catch (err) {
+      console.error("❌ Opslaan klant:", err);
+      showToast("Onverwachte fout", "error");
+    }
+  }); // ⬅️ dit haakje sluit openModal()
+
+  // 🔄 Automatische veldlogica (Type Klant → BTW% en bedrijfsvelden)
+// 🔄 Automatische veldlogica (Type Klant → BTW% en bedrijfsvelden)
+setTimeout(() => {
+  const modal = document.querySelector(".modal-card");
+  if (!modal) return;
+
+  // Pak velden generiek (maakt niet uit of het select of input is)
+  const typeSelect = modal.querySelector("[name='typeKlant']");
+  const vatField = modal.querySelector("[name='contract_vat']");
+  const bedrijfsnaamWrap = modal.querySelector("[name='bedrijfsnaam']")?.closest(".form-field");
+  const kvkWrap = modal.querySelector("[name='kvk']")?.closest(".form-field");
+  const btwWrap = modal.querySelector("[name='btw']")?.closest(".form-field");
+
+  const updateFields = () => {
+    if (!typeSelect) return;
+    const zakelijk = typeSelect.value === "Zakelijk";
+
+    // BTW%: Zakelijk = 21%, Particulier = 0% (pas aan als je andere logica wilt)
+    if (vatField) vatField.value = zakelijk ? 21 : 21;
+
+    // Bedrijfsvelden tonen/verbergen
+    if (bedrijfsnaamWrap) bedrijfsnaamWrap.style.display = zakelijk ? "" : "none";
+    if (kvkWrap) kvkWrap.style.display = zakelijk ? "" : "none";
+    if (btwWrap) btwWrap.style.display = zakelijk ? "" : "none";
   };
+
+  updateFields();
+  typeSelect?.addEventListener("change", updateFields);
+}, 0);
+
+// 🔄 OpenPostcode.nl integratie (gratis, zonder API-key)
+setTimeout(() => {
+  const modal = document.querySelector(".modal-card");
+  if (!modal) return;
+
+  const streetField = modal.querySelector("[name='address']");
+  const numberField = modal.querySelector("[name='houseNumber']");
+  const pcField     = modal.querySelector("[name='postcode']");
+  const cityField   = modal.querySelector("[name='city']");
+
+  // Spinner
+  function toggleSpinner(show) {
+    let spinner = modal.querySelector(".loading-icon");
+    if (show) {
+      if (!spinner) {
+        spinner = document.createElement("span");
+        spinner.className = "loading-icon";
+        cityField.parentElement.appendChild(spinner);
+      }
+    } else {
+      spinner?.remove();
+    }
+  }
+
+  // Helper: normaliseer postcode (1234 AB)
+  const formatPostcode = (pc) => {
+    const s = (pc || "").toUpperCase().replace(/\s+/g, "");
+    if (/^\d{4}[A-Z]{2}$/.test(s)) return s.slice(0,4) + " " + s.slice(4);
+    return pc;
+  };
+
+  // ✅ A: Postcode + huisnummer → straat + woonplaats
+  async function lookupAddress() {
+    const pc = (pcField.value || "").replace(/\s+/g, "");
+    const hn = numberField.value.trim();
+    if (!/^\d{4}[A-Za-z]{2}$/.test(pc) || !hn) return;
+
+    toggleSpinner(true);
+    try {
+      const url = `https://openpostcode.nl/api/address?postcode=${encodeURIComponent(pc)}&huisnummer=${encodeURIComponent(hn)}`;
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (data?.straat && data?.woonplaats) {
+        streetField.value = data.straat;
+        cityField.value   = data.woonplaats;
+        pcField.value     = formatPostcode(data.postcode);
+        showToast("Adres automatisch ingevuld", "success");
+      } else {
+        showToast("Adres niet gevonden", "warning");
+      }
+    } catch (err) {
+      console.warn("lookupAddress error:", err);
+      showToast("Adres niet gevonden", "warning");
+    } finally {
+      toggleSpinner(false);
+    }
+  }
+
+  // ✅ B: Straat + plaats → eerste postcode
+  async function lookupPostcode() {
+    const street = streetField.value.trim();
+    const city   = cityField.value.trim();
+    if (!street || !city) return;
+
+    toggleSpinner(true);
+    try {
+      const url = `https://openpostcode.nl/api/postcode?straat=${encodeURIComponent(street)}&plaats=${encodeURIComponent(city)}`;
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (data?.postcodes?.length) {
+        pcField.value = formatPostcode(data.postcodes[0]);
+        showToast("Postcode automatisch ingevuld", "success");
+      } else {
+        showToast("Postcode niet gevonden", "warning");
+      }
+    } catch (err) {
+      console.warn("lookupPostcode error:", err);
+      showToast("Postcode niet gevonden", "warning");
+    } finally {
+      toggleSpinner(false);
+    }
+  }
+
+  // Events
+  pcField.addEventListener("blur", lookupAddress);
+  numberField.addEventListener("blur", lookupAddress);
+  streetField.addEventListener("blur", lookupPostcode);
+  cityField.addEventListener("blur", lookupPostcode);
+}, 0);
+};
+
 
   // ✅ Import knop
   document.getElementById("importClientsBtn").onclick = async () => {
@@ -632,7 +723,6 @@ document.getElementById("newContractBtn").onclick = () => {
     { id: "clientId", label: "Klant", type: "select", options: clients.map(c => c.name) },
     { id: "typeService", label: "Type service", type: "multiselect", options: settings.typeServices },
     { id: "frequency", label: "Frequentie", type: "select", options: settings.frequencies },
-    { id: "description", label: "Beschrijving" },
     { id: "priceEx", label: "Prijs excl. (€)" },
     { id: "vatPct", label: "BTW (%)", type: "number", value: 21, disabled: true },
     { id: "lastVisit", label: "Laatste bezoek", type: "date" },
@@ -707,7 +797,6 @@ function openContractDetail(c) {
     { id: "id", label: "Contract ID", value: c.id, readonly: true },
     { id: "client_name", label: "Klant", value: c.client_name || "-", readonly: true },
     { id: "typeService", label: "Type Service", type: "multiselect", options: settings.typeServices, value: c.type_service },
-    { id: "description", label: "Beschrijving", value: c.description || "-" },
     { id: "frequency", label: "Frequentie", type: "select", options: settings.frequencies, value: c.frequency },
     { id: "priceInc", label: "Prijs (incl.)", value: c.price_inc ? `€${Number(c.price_inc).toFixed(2)}` : "€0.00" },
     { id: "vat_pct", label: "BTW (%)", value: "21%", readonly: true },
