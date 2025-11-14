@@ -1795,10 +1795,7 @@ document.getElementById("periodInvoiceBtn").onclick = async () => {
     showToast("Fout bij laden facturen", "error");
   }
 }
-// ✅ Klikbare rijen om details te openen
-list.querySelectorAll("tbody tr").forEach((tr, i) => {
-  tr.addEventListener("click", () => openInvoiceDetail(invoices[i]));
-});
+
 // ---------- 🧾 Factuur detail ----------
 function openInvoiceDetail(i) {
   openModal(`Factuur – ${i.client_name || "-"}`, [
