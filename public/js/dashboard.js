@@ -1459,6 +1459,12 @@ if (!Array.isArray(tags) || !tags.length) {
 
       <div class="overflow-y-auto max-h-[70vh] relative" id="invoicesTable"></div>
     `;
+    console.log("Filter debug:", {
+  search: s,
+  period: p,
+  method: m,
+  availableMethods: invoices.map(i => i.method)
+});
 
     const tableContainer = document.getElementById("invoicesTable");
 
@@ -1501,10 +1507,14 @@ tableContainer.querySelectorAll("tbody tr").forEach((tr, i) => {
 
     }
 
-   ["invoiceSearch", "filterPeriod", "filterMethod"].forEach(id => {
+ document.getElementById("invoiceSearch").addEventListener("input", renderFiltered);
+
+// ✅ Zorg dat de juiste ID-naam overeenkomt met je HTML
+["filterPeriod", "filterMethod", "methodFilter"].forEach(id => {
   const el = document.getElementById(id);
-  el.addEventListener(el.tagName === "SELECT" ? "change" : "input", renderFiltered);
+  if (el) el.addEventListener("change", renderFiltered);
 });
+
     renderFiltered();
 
 // ---------- 🧾 Factureer een klant ----------
