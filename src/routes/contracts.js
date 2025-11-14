@@ -299,59 +299,150 @@ router.post("/", async (req, res) => {
 router.put("/:id", async (req, res) => {
   try {
     const {
-  frequency, description, paymentNotes,
-  priceEx, vatPct, groteBeurt, typeService,
-  lastVisit, active,
-  maandelijkse_facturatie, invoice_day    // ✅ nieuw veld toegevoegd
-} = req.body;
+      frequency,
+      description,
+      paymentNotes,
+      priceEx,
+      priceInc,
+      vatPct,
+      groteBeurt,
+      typeService,
+      lastVisit,
+      active,
+      maandelijkse_facturatie,
+      invoice_day // ✅ nieuw veld toegevoegd
+    } = req.body;
 
-const safeInvoiceDay = invoice_day === "" ? null : Number(invoice_day) || null;
-const freq = allowedFreq.includes(frequency) ? frequency : undefined;
-const ex = priceEx !== undefined ? parseFloat(priceEx) : undefined;
-const vat = vatPct !== undefined ? parseFloat(vatPct) : undefined;
-const nextVisit =
-  (lastVisit || freq)
-    ? computeNextVisit(lastVisit, freq || "Maand")
-    : undefined;
+    // ====== BEGIN prijs/BTW normalisatie (incl. fallback) ======
+    const contractId = req.params.id;
 
- // ✅ Automatisch beschrijving updaten als typeService is gewijzigd
-let newDescription = description;
-if (!description && Array.isArray(typeService) && typeService.length) {
-  description = typeService.join(", ");
-}   
-// contract_eind_datum blijft read-only
-const { rows } = await pool.query(
-  `UPDATE contracts
-     SET frequency = COALESCE($1, frequency),
-         description = COALESCE($2, description),
-         payment_notes = COALESCE($3, payment_notes),
-         price_ex = COALESCE($4, price_ex),
-         vat_pct = COALESCE($5, vat_pct),
-         price_inc = CASE
-           WHEN $4 IS NOT NULL AND $5 IS NOT NULL THEN ROUND($4 * (1 + $5/100), 2)
-           ELSE price_inc
-         END,
-         grote_beurt = COALESCE($6, grote_beurt),
-         type_service = COALESCE($7, type_service),
-         last_visit = COALESCE($8, last_visit),
-         next_visit = COALESCE($9, next_visit),
-         maandelijkse_facturatie = COALESCE($10, maandelijkse_facturatie),
-         invoice_day = COALESCE($11, invoice_day),      -- ✅ nieuw veld
-         active = COALESCE($12, active)
-   WHERE id = $13
-   RETURNING *`,
-  [
-    freq, description, paymentNotes, ex, vat, groteBeurt,
-    JSON.stringify(typeService), lastVisit, nextVisit,
-    maandelijkse_facturatie, safeInvoiceDay, active, req.params.id
-  ]
-);
+    // 1️⃣ BTW normaliseren
+    let vat = null;
+    if (vatPct !== undefined && vatPct !== "") {
+      const parsedVat = parseFloat(vatPct);
+      if (!isNaN(parsedVat)) vat = parsedVat;
+    }
 
+    // 2️⃣ Startwaarde prijs excl.
+    let ex = null;
+    if (priceEx !== undefined && priceEx !== "") {
+      const parsedEx = parseFloat(
+        priceEx.toString().replace(/[^\d.,-]/g, "").replace(",", ".")
+      );
+      if (!isNaN(parsedEx)) ex = parsedEx;
+    }
+
+    // 3️⃣ Alleen prijs incl. ontvangen → bereken prijsEx
+    if (ex === null && priceInc !== undefined && priceInc !== "") {
+      // BTW uit DB ophalen als fallback
+      let effectiveVat = vat;
+      if (effectiveVat === null) {
+        try {
+          const vatRow = await pool.query(
+            "SELECT vat_pct FROM contracts WHERE id = $1 LIMIT 1",
+            [contractId]
+          );
+          if (vatRow.rows.length) {
+            const dbVat = parseFloat(vatRow.rows[0].vat_pct);
+            if (!isNaN(dbVat)) effectiveVat = dbVat;
+          }
+        } catch (e) {
+          effectiveVat = effectiveVat ?? 21;
+        }
+      }
+
+      // Bereken ex
+      const incClean = parseFloat(
+        priceInc.toString().replace(/[^\d.,-]/g, "").replace(",", ".")
+      );
+      if (!isNaN(incClean) && effectiveVat !== null) {
+        ex = +(incClean / (1 + effectiveVat / 100)).toFixed(2);
+      }
+    }
+    // ====== EINDE prijs/BTW normalisatie ======
+
+    const safeInvoiceDay = invoice_day === "" ? null : Number(invoice_day) || null;
+
+    // ✅ Frequentie blijft hetzelfde
+    const freq = allowedFreq.includes(frequency) ? frequency : undefined;
+
+    // ✅ Bereken volgende bezoek
+    const nextVisit =
+      (lastVisit || freq)
+        ? computeNextVisit(lastVisit, freq || "Maand")
+        : undefined;
+
+    // ✅ Automatisch beschrijving updaten als typeService is gewijzigd
+    let newDescription = description;
+    if (!description && Array.isArray(typeService) && typeService.length) {
+      description = typeService.join(", ");
+    }
+
+    // contract_eind_datum blijft read-only
+    const { rows } = await pool.query(
+      `UPDATE contracts
+         SET frequency = COALESCE($1, frequency),
+             description = COALESCE($2, description),
+             payment_notes = COALESCE($3, payment_notes),
+
+             -- 💰 Prijsberekening (werkt bij wijziging van prijsEx, prijsInc of BTW)
+             price_ex = COALESCE($4, price_ex),
+             vat_pct  = COALESCE($5, vat_pct),
+             price_inc = CASE
+               WHEN $4 IS NOT NULL OR $5 IS NOT NULL
+                 THEN ROUND( COALESCE($4, price_ex) * (1 + COALESCE($5, vat_pct) / 100), 2 )
+               ELSE price_inc
+             END,
+
+             grote_beurt = COALESCE($6, grote_beurt),
+             type_service = COALESCE($7, type_service),
+             last_visit = COALESCE($8, last_visit),
+             next_visit = COALESCE($9, next_visit),
+             maandelijkse_facturatie = COALESCE($10, maandelijkse_facturatie),
+             invoice_day = COALESCE($11, invoice_day),
+             active = COALESCE($12, active)
+       WHERE id = $13
+       RETURNING *`,
+      [
+        freq,                     // $1
+        description,               // $2
+        paymentNotes,              // $3
+        ex,                        // $4 (prijs excl)
+        vat,                       // $5 (btw)
+        groteBeurt,                // $6
+        JSON.stringify(typeService), // $7
+        lastVisit,                 // $8
+        nextVisit,                 // $9
+        maandelijkse_facturatie,   // $10
+        safeInvoiceDay,            // $11
+        active,                    // $12
+        req.params.id              // $13
+      ]
+    );
 
     if (!rows.length)
       return res.status(404).json({ error: "Contract niet gevonden" });
 
     const contract = rows[0];
+
+    // 🔹 Type service altijd als array teruggeven
+    if (typeof contract.type_service === "string") {
+      try {
+        contract.type_service = JSON.parse(contract.type_service);
+      } catch {
+        contract.type_service = [];
+      }
+    }
+
+    // 🔹 Prijzen als numerieke waarden
+    contract.price_ex = contract.price_ex ? Number(contract.price_ex) : 0;
+    contract.price_inc = contract.price_inc ? Number(contract.price_inc) : 0;
+
+ 
+  
+   
+  
+
 
     // 2) Reeks heropbouwen (12 maanden vooruit), veilig
     try {

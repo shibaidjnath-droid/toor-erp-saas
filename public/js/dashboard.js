@@ -706,10 +706,10 @@ function openContractDetail(c) {
   openModal(`Contract – ${c.client_name || "Onbekende klant"}`, [
     { id: "id", label: "Contract ID", value: c.id, readonly: true },
     { id: "client_name", label: "Klant", value: c.client_name || "-", readonly: true },
-    { id: "type_service", label: "Type Service", value: Array.isArray(c.type_service) ? c.type_service.join(", ") : c.type_service || "-" },
+    { id: "typeService", label: "Type Service", type: "multiselect", options: settings.typeServices, value: c.type_service },
     { id: "description", label: "Beschrijving", value: c.description || "-" },
-    { id: "frequency", label: "Frequentie", value: c.frequency || "-" },
-    { id: "price_inc", label: "Prijs (incl.)", value: c.price_inc ? `€${Number(c.price_inc).toFixed(2)}` : "€0.00" },
+    { id: "frequency", label: "Frequentie", type: "select", options: settings.frequencies, value: c.frequency },
+    { id: "priceInc", label: "Prijs (incl.)", value: c.price_inc ? `€${Number(c.price_inc).toFixed(2)}` : "€0.00" },
     { id: "vat_pct", label: "BTW (%)", value: "21%", readonly: true },
     { id: "last_visit", label: "Laatste bezoek", value: c.last_visit ? c.last_visit.split("T")[0] : "-", readonly: true },
     { id: "next_visit", label: "Volgende bezoek", value: c.next_visit ? c.next_visit.split("T")[0] : "-", readonly: true },
