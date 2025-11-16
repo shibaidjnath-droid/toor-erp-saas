@@ -1,5 +1,15 @@
-2025/11/14-23:05:00.733 71f8 Reusing MANIFEST C:\Users\shiba\Desktop\TOOR ERP\TOOR ERP Kristalhelder TEST\sessions\session\Default\Local Storage\leveldb/MANIFEST-000001
-2025/11/14-23:05:00.734 71f8 Recovering log #26
-2025/11/14-23:05:00.736 71f8 Level-0 table #29: started
-2025/11/14-23:05:00.742 71f8 Level-0 table #29: 15500 bytes OK
-2025/11/14-23:05:00.745 71f8 Delete type=0 #26
+2025/11/16-21:44:19.403 820c Reusing MANIFEST C:\Users\shiba\Desktop\TOOR ERP\TOOR ERP Kristalhelder TEST\sessions\session\Default\Local Storage\leveldb/MANIFEST-000001
+2025/11/16-21:44:19.405 820c Recovering log #40
+2025/11/16-21:44:19.408 820c Reusing old log C:\Users\shiba\Desktop\TOOR ERP\TOOR ERP Kristalhelder TEST\sessions\session\Default\Local Storage\leveldb/000040.log 
+2025/11/16-21:45:22.445 83dc Level-0 table #44: started
+2025/11/16-21:45:22.462 83dc Level-0 table #44: 15252 bytes OK
+2025/11/16-21:45:22.477 83dc Delete type=0 #40
+2025/11/16-21:45:22.483 83dc Compacting 4@0 + 1@1 files
+2025/11/16-21:45:22.502 83dc Generated table #45@0: 241 keys, 7650 bytes
+2025/11/16-21:45:22.502 83dc Compacted 4@0 + 1@1 files => 7650 bytes
+2025/11/16-21:45:22.511 83dc compacted to: files[ 0 1 1 0 0 0 0 ]
+2025/11/16-21:45:22.512 83dc Delete type=2 #34
+2025/11/16-21:45:22.512 83dc Delete type=2 #37
+2025/11/16-21:45:22.512 83dc Delete type=2 #39
+2025/11/16-21:45:22.512 83dc Delete type=2 #41
+2025/11/16-21:45:22.512 83dc Delete type=2 #44

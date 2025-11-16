@@ -408,7 +408,7 @@ setTimeout(() => {
 
     toggleSpinner(true);
     try {
-      const url = `https://openpostcode.nl/api/address?postcode=${encodeURIComponent(pc)}&huisnummer=${encodeURIComponent(hn)}`;
+      const url = `/api/address/lookup-address?postcode=${encodeURIComponent(pc)}&huisnummer=${encodeURIComponent(hn)}`;
       const res = await fetch(url);
       const data = await res.json();
 
@@ -428,29 +428,32 @@ setTimeout(() => {
     }
   }
 
-  // ✅ B: Straat + plaats → eerste postcode
+  // ✅ B: Straat + plaats + huisnummer → postcode
   async function lookupPostcode() {
     const street = streetField.value.trim();
     const city   = cityField.value.trim();
-    if (!street || !city) return;
+    const hn     = numberField.value.trim();
+    if (!street || !city || !hn) return;
 
     toggleSpinner(true);
-    try {
-      const url = `https://openpostcode.nl/api/postcode?straat=${encodeURIComponent(street)}&plaats=${encodeURIComponent(city)}`;
-      const res = await fetch(url);
-      const data = await res.json();
+  try {
+    console.log("🔎 Lookup URL", `/api/address/lookup-postcode?straat=${encodeURIComponent(street)}&plaats=${encodeURIComponent(city)}&huisnummer=${encodeURIComponent(hn)}`);
+    
+    const url = `/api/address/lookup-postcode?straat=${encodeURIComponent(street)}&plaats=${encodeURIComponent(city)}&huisnummer=${encodeURIComponent(hn)}`;
+    const res = await fetch(url);
+    const data = await res.json();
 
-      if (data?.postcodes?.length) {
-        pcField.value = formatPostcode(data.postcodes[0]);
-        showToast("Postcode automatisch ingevuld", "success");
-      } else {
-        showToast("Postcode niet gevonden", "warning");
-      }
-    } catch (err) {
-      console.warn("lookupPostcode error:", err);
+    if (res.ok && data?.postcode) {
+      pcField.value = formatPostcode(data.postcode);
+      showToast(`Postcode automatisch ingevuld (${data.source || "pdok"})`, "success");
+    } else {
       showToast("Postcode niet gevonden", "warning");
-    } finally {
-      toggleSpinner(false);
+    }
+  } catch (err) {
+    console.warn("lookupPostcode error:", err);
+    showToast("Postcode niet gevonden", "warning");
+  } finally {
+    toggleSpinner(false);
     }
   }
 
