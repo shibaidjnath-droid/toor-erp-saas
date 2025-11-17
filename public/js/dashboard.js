@@ -463,6 +463,64 @@ setTimeout(() => {
   streetField.addEventListener("blur", lookupPostcode);
   cityField.addEventListener("blur", lookupPostcode);
 }, 0);
+// 🔄 KVK lookup integratie
+setTimeout(() => {
+   const ENABLE_KVK_LOOKUP = false; // ⛔ tijdelijk uitgeschakeld
+  if (!ENABLE_KVK_LOOKUP) return;  // ⛔ lookup op pauze
+
+  const typeSelect = modal.querySelector("[name='typeKlant']");
+  const kvkField   = modal.querySelector("[name='kvk']");
+  const nameField  = modal.querySelector("[name='bedrijfsnaam']");
+  const addressField = modal.querySelector("[name='address']");
+  const cityField  = modal.querySelector("[name='city']");
+
+  // ✅ A: KVK-nummer → alleen bedrijfsnaam ophalen
+kvkField?.addEventListener("blur", async () => {
+  if (typeSelect?.value !== "Zakelijk") return;
+  const kvk = kvkField.value.trim();
+  if (!kvk) return;
+
+  try {
+    const res = await fetch(`/api/kvk/by-number/${encodeURIComponent(kvk)}`);
+    const data = await res.json();
+    if (res.ok && data?.handelsnaam) {
+      nameField.value = data.handelsnaam;
+      showToast(`Bedrijfsnaam gevonden: ${data.handelsnaam}`, "success");
+    } else {
+      showToast("Geen bedrijf gevonden met dit KVK-nummer", "warning");
+    }
+  } catch (err) {
+    console.warn("KVK by-number lookup failed:", err);
+    showToast("Fout bij ophalen KVK-gegevens", "error");
+  }
+});
+
+
+  // ✅ B: Bedrijfsnaam → KVK-nummer
+  nameField?.addEventListener("blur", async () => {
+    if (typeSelect?.value !== "Zakelijk") return;
+    const name = nameField.value.trim();
+    const city = cityField.value.trim();
+    const addr = addressField.value.trim();
+    if (!name) return;
+    if (kvkField.value) return; // al ingevuld
+
+    try {
+      const res = await fetch(`/api/kvk/by-name?handelsnaam=${encodeURIComponent(name)}&plaats=${encodeURIComponent(city || "")}`);
+      const data = await res.json();
+      if (res.ok && data?.kvk) {
+        kvkField.value = data.kvk;
+        showToast(`KVK gevonden: ${data.kvk}`, "success");
+      } else {
+        showToast("Geen KVK gevonden voor deze bedrijfsnaam", "warning");
+      }
+    } catch (err) {
+      console.warn("KVK by-name lookup failed:", err);
+      showToast("Fout bij zoeken naar KVK", "error");
+    }
+  });
+}, 0);
+
 };
 
 

@@ -310,20 +310,18 @@ router.put("/:id", async (req, res) => {
       lastVisit,
       active,
       maandelijkse_facturatie,
-      invoice_day // ✅ nieuw veld toegevoegd
+      invoice_day
     } = req.body;
 
-    // ====== BEGIN prijs/BTW normalisatie (incl. fallback) ======
     const contractId = req.params.id;
 
-    // 1️⃣ BTW normaliseren
+    // ====== BEGIN prijs/BTW normalisatie (incl. fallback) ======
     let vat = null;
     if (vatPct !== undefined && vatPct !== "") {
       const parsedVat = parseFloat(vatPct);
       if (!isNaN(parsedVat)) vat = parsedVat;
     }
 
-    // 2️⃣ Startwaarde prijs excl.
     let ex = null;
     if (priceEx !== undefined && priceEx !== "") {
       const parsedEx = parseFloat(
@@ -332,9 +330,7 @@ router.put("/:id", async (req, res) => {
       if (!isNaN(parsedEx)) ex = parsedEx;
     }
 
-    // 3️⃣ Alleen prijs incl. ontvangen → bereken prijsEx
     if (ex === null && priceInc !== undefined && priceInc !== "") {
-      // BTW uit DB ophalen als fallback
       let effectiveVat = vat;
       if (effectiveVat === null) {
         try {
@@ -350,8 +346,6 @@ router.put("/:id", async (req, res) => {
           effectiveVat = effectiveVat ?? 21;
         }
       }
-
-      // Bereken ex
       const incClean = parseFloat(
         priceInc.toString().replace(/[^\d.,-]/g, "").replace(",", ".")
       );
@@ -362,30 +356,25 @@ router.put("/:id", async (req, res) => {
     // ====== EINDE prijs/BTW normalisatie ======
 
     const safeInvoiceDay = invoice_day === "" ? null : Number(invoice_day) || null;
-
-    // ✅ Frequentie blijft hetzelfde
     const freq = allowedFreq.includes(frequency) ? frequency : undefined;
-
-    // ✅ Bereken volgende bezoek
     const nextVisit =
       (lastVisit || freq)
         ? computeNextVisit(lastVisit, freq || "Maand")
         : undefined;
 
-    // ✅ Automatisch beschrijving updaten als typeService is gewijzigd
-    let newDescription = description;
-    if (!description && Array.isArray(typeService) && typeService.length) {
-      description = typeService.join(", ");
-    }
+    // ✅ veilige lokale variabele zodat we const description niet herschrijven
+let desc = description;
+if (!desc && Array.isArray(typeService) && typeService.length) {
+  desc = typeService.join(", ");
+}
 
-    // contract_eind_datum blijft read-only
-    const { rows } = await pool.query(
+
+    // 🔧 wijzig const → let
+    let { rows } = await pool.query(
       `UPDATE contracts
          SET frequency = COALESCE($1, frequency),
              description = COALESCE($2, description),
              payment_notes = COALESCE($3, payment_notes),
-
-             -- 💰 Prijsberekening (werkt bij wijziging van prijsEx, prijsInc of BTW)
              price_ex = COALESCE($4, price_ex),
              vat_pct  = COALESCE($5, vat_pct),
              price_inc = CASE
@@ -393,7 +382,6 @@ router.put("/:id", async (req, res) => {
                  THEN ROUND( COALESCE($4, price_ex) * (1 + COALESCE($5, vat_pct) / 100), 2 )
                ELSE price_inc
              END,
-
              grote_beurt = COALESCE($6, grote_beurt),
              type_service = COALESCE($7, type_service),
              last_visit = COALESCE($8, last_visit),
@@ -404,28 +392,28 @@ router.put("/:id", async (req, res) => {
        WHERE id = $13
        RETURNING *`,
       [
-        freq,                     // $1
-        description,               // $2
-        paymentNotes,              // $3
-        ex,                        // $4 (prijs excl)
-        vat,                       // $5 (btw)
-        groteBeurt,                // $6
-        JSON.stringify(typeService), // $7
-        lastVisit,                 // $8
-        nextVisit,                 // $9
-        maandelijkse_facturatie,   // $10
-        safeInvoiceDay,            // $11
-        active,                    // $12
-        req.params.id              // $13
+        freq,
+        desc,
+        paymentNotes,
+        ex,
+        vat,
+        groteBeurt,
+        JSON.stringify(typeService),
+        lastVisit,
+        nextVisit,
+        maandelijkse_facturatie,
+        safeInvoiceDay,
+        active,
+        req.params.id,
       ]
     );
 
     if (!rows.length)
       return res.status(404).json({ error: "Contract niet gevonden" });
 
-    const contract = rows[0];
+    // 🔧 wijzig const → let
+    let contract = rows[0];
 
-    // 🔹 Type service altijd als array teruggeven
     if (typeof contract.type_service === "string") {
       try {
         contract.type_service = JSON.parse(contract.type_service);
@@ -434,77 +422,40 @@ router.put("/:id", async (req, res) => {
       }
     }
 
-    // 🔹 Prijzen als numerieke waarden
     contract.price_ex = contract.price_ex ? Number(contract.price_ex) : 0;
     contract.price_inc = contract.price_inc ? Number(contract.price_inc) : 0;
 
- 
-  
-   
-  
-
-
-    // 2) Reeks heropbouwen (12 maanden vooruit), veilig
     try {
       await rebuildSeriesForContract(contract, { logPrefix: "PUT /contracts – " });
     } catch (err) {
       console.warn("❌ Slimme planning niet gelukt (PUT):", err.message);
     }
 
-    if (typeof contract.type_service === "string")
-      contract.type_service = JSON.parse(contract.type_service);
+    if (maandelijkse_facturatie !== undefined) {
+      if (maandelijkse_facturatie === "Ja" || maandelijkse_facturatie === true) {
+        await pool.query(
+          `UPDATE planning
+           SET invoiced = true
+           WHERE contract_id = $1`,
+          [req.params.id]
+        );
+        console.log(`💰 Alle planning van contract ${req.params.id} gemarkeerd als gefactureerd (maandelijkse facturatie actief).`);
+      } else if (maandelijkse_facturatie === "Nee" || maandelijkse_facturatie === false) {
+        await pool.query(
+          `UPDATE planning
+           SET invoiced = false
+           WHERE contract_id = $1
+             AND date >= now()`,
+          [req.params.id]
+        );
+        console.log(`↩️ Toekomstige planning van contract ${req.params.id} teruggezet naar niet-gefactureerd (maandelijkse facturatie uit).`);
+      }
+    }
 
     res.json(contract);
   } catch (err) {
-    console.error("❌ DB update error:", err.message);
+    console.error("❌ DB update error:", err);
     res.status(500).json({ error: "Database update error" });
-  }
-});
-
-/** ✅ PATCH – bezoek registreren */
-router.patch("/:id/visit", async (req, res) => {
-  try {
-    const { date } = req.body;
-    const when = date ? new Date(date).toISOString() : new Date().toISOString();
-
-    const contract = await pool.query("SELECT frequency FROM contracts WHERE id=$1", [req.params.id]);
-    if (!contract.rows.length)
-      return res.status(404).json({ error: "Contract niet gevonden" });
-
-    const nextVisit = computeNextVisit(when, contract.rows[0].frequency);
-
-    const { rows } = await pool.query(
-      `UPDATE contracts
-       SET last_visit=$1, next_visit=$2
-       WHERE id=$3 RETURNING *`,
-      [when, nextVisit, req.params.id]
-    );
-
-    res.json(rows[0]);
-  } catch (err) {
-    console.error("❌ Visit update error:", err.message);
-    res.status(500).json({ error: "Update visit failed" });
-  }
-});
-
-/** ✅ PATCH – handmatige override van nextVisit */
-router.patch("/:id/override", async (req, res) => {
-  try {
-    const { nextVisit } = req.body;
-    if (!nextVisit)
-      return res.status(400).json({ error: "nextVisit verplicht (ISO string)" });
-
-    const { rows } = await pool.query(
-      `UPDATE contracts SET next_visit=$1 WHERE id=$2 RETURNING *`,
-      [new Date(nextVisit).toISOString(), req.params.id]
-    );
-    if (!rows.length)
-      return res.status(404).json({ error: "Contract niet gevonden" });
-
-    res.json(rows[0]);
-  } catch (err) {
-    console.error("❌ Override error:", err.message);
-    res.status(500).json({ error: "Override update failed" });
   }
 });
 

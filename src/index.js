@@ -26,6 +26,7 @@ import rolesRouter from './routes/roles.js';
 // Let op bestandsnaam: jouw file heet ServiceTypes.js
 import serviceTypesRouter from './routes/serviceTypes.js';
 import importExportRouter from './routes/importExport.js';
+import kvkRouter from "./routes/kvk.js";
 
 const app = express();
 app.use(express.json());
@@ -50,6 +51,7 @@ app.use('/api/planning', planningRouter);
 //app.use('/dashboard/api/planning', planningRouter);
 app.use("/api/invoices-yuki", invoicesYukiRouter);
 app.use("/api/address", addressRouter);
+app.use("/api/kvk", kvkRouter);
 
 // 🔥 NIEUW mounts
 app.use('/api/contracts', contractsRouter);
