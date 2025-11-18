@@ -1577,29 +1577,34 @@ if (!Array.isArray(tags) || !tags.length) {
     if (!res.ok) throw new Error("Fout bij ophalen facturen");
     invoices = await res.json();
 
+    // 🔥 Dynamische methodes laden
+const mRes = await fetch("/api/invoices/methods");
+let methods = [];
+if (mRes.ok) methods = await mRes.json();
+
     // 🔹 Header + filters + acties
     list.innerHTML = `
       <div class="flex flex-wrap justify-between items-center mb-2 gap-2">
         <h2 class="text-xl font-semibold">Facturen</h2>
 
         <div class="flex flex-wrap items-center gap-2 justify-end">
-          <input id="invoiceSearch" type="text" placeholder="Zoek..."
-            class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700" />
+         <input id="invoiceSearchInvoices" type="text" placeholder="Zoek..."
+  class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700" />
 
-          <select id="filterPeriod" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
-            <option value="">Periode</option>
-            <option value="vandaag">Vandaag</option>
-            <option value="deze_week">Deze week</option>
-            <option value="deze_maand">Deze maand</option>
-          </select>
+<select id="filterPeriodInvoices" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
+  <option value="">Periode</option>
+  <option value="vandaag">Vandaag</option>
+  <option value="deze_week">Deze week</option>
+  <option value="deze_maand">Deze maand</option>
+</select>
 
-          <select id="filterMethod" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
-            <option value="">Methode</option>
-            <option value="maandelijks">Maandelijks</option>
-            <option value="klant">Per klant</option>
-            <option value="tag">Per tag</option>
-            <option value="periode">Per periode</option>
-          </select>
+<select id="filterMethodInvoices" class="border rounded px-2 py-1 text-sm dark:bg-gray-800 dark:border-gray-700">
+  <option value="">Methode</option>
+  ${methods
+    .filter(m => m && m.trim() !== "")
+    .map(m => `<option value="${m}">${m.charAt(0).toUpperCase() + m.slice(1)}</option>`)
+    .join("")}
+</select>
 
           <button id="manualInvoiceBtn" class="bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700">🧾 Factureer een klant</button>
           <button id="tagInvoiceBtn" class="bg-indigo-600 text-white px-3 py-2 rounded hover:bg-indigo-700">🏷️ Bulk per Tag</button>
@@ -1613,30 +1618,46 @@ if (!Array.isArray(tags) || !tags.length) {
 
     const tableContainer = document.getElementById("invoicesTable");
 
-    // 🔎 Filterfunctie
-    function renderFiltered() {
-      const s = document.getElementById("invoiceSearch").value.toLowerCase();
-      const p = document.getElementById("filterPeriod").value.toLowerCase();
-      const m = document.getElementById("filterMethod").value.toLowerCase();
+ function renderFiltered() {
 
-    console.log("Filter debug:", {
-    search: s,
-    period: p,
-    method: m,
-    availableMethods: invoices.map(i => i.method)
+  const s = (document.querySelector("#invoiceSearchInvoices")?.value || "").toLowerCase();
+const p = (document.querySelector("#filterPeriodInvoices")?.value || "").toLowerCase();
+const m = (document.querySelector("#filterMethodInvoices")?.value || "").toLowerCase();
+
+
+
+  const filtered = invoices.map(inv => {
+    // Auto-fix NULL method → “maandelijks”
+    inv.method = (inv.method || "maandelijks").toLowerCase();
+    return inv;
+  }).filter(inv => {
+
+    // Database method is altijd lowercase nu
+    const invMethod = inv.method;
+
+    // Search filter
+    const matchesSearch =
+      !s || Object.values(inv).join(" ").toLowerCase().includes(s);
+
+    // Method filter
+    const matchesMethod =
+      !m || invMethod === m;
+
+    // Period filter
+    const matchesPeriod =
+      !p ||
+      (p === "vandaag" &&
+        inv.created_at?.startsWith(new Date().toISOString().split("T")[0])) ||
+      (p === "deze_week" &&
+        new Date(inv.created_at) >= getStartOfWeek()) ||
+      (p === "deze_maand" &&
+        new Date(inv.created_at).getMonth() === new Date().getMonth());
+
+    return matchesSearch && matchesMethod && matchesPeriod;
   });
 
-      const filtered = invoices.filter(inv => {
-        const matchesSearch = !s || Object.values(inv).join(" ").toLowerCase().includes(s);
-        const matchesMethod = !m || (inv.method || "").toLowerCase() === m;
-        // Periodefilter — basic check op datumtekst
-        const matchesPeriod =
-          !p ||
-          (p === "vandaag" && inv.created_at?.startsWith(new Date().toISOString().split("T")[0])) ||
-          (p === "deze_week" && new Date(inv.created_at) >= getStartOfWeek()) ||
-          (p === "deze_maand" && new Date(inv.created_at).getMonth() === new Date().getMonth());
-        return matchesSearch && matchesMethod && matchesPeriod;
-      });
+
+
 
       const rows = filtered.map(i => [
   i.client_name || "-",
@@ -1644,11 +1665,13 @@ if (!Array.isArray(tags) || !tags.length) {
   i.amount ? `€${Number(i.amount).toFixed(2)}` : "€0.00",
   i.date ? i.date.split("T")[0] : (i.created_at ? i.created_at.split("T")[0] : "-"),
   i.method || "-",
-  renderStatusBadge(i.status)
+  i.status || "-",          // 👉 Toor Status
+ // i.yuki_status || "-"      // 👉 Yuki Status
+  
 ]);
 
 tableContainer.innerHTML = tableHTML(
-  ["Klant", "Planning", "Bedrag", "Datum", "Methode", "Status"],
+  ["Klant", "Planning", "Bedrag", "Datum", "Methode", "Toor Status"],
   rows
 
 );
@@ -1659,13 +1682,14 @@ tableContainer.querySelectorAll("tbody tr").forEach((tr, i) => {
 
     }
 
- document.getElementById("invoiceSearch").addEventListener("input", renderFiltered);
+ document.getElementById("invoiceSearchInvoices").addEventListener("input", renderFiltered);
 
 // ✅ Zorg dat de juiste ID-naam overeenkomt met je HTML
-["filterPeriod", "filterMethod", "methodFilter"].forEach(id => {
+["filterPeriodInvoices", "filterMethodInvoices", "invoiceSearchInvoices"].forEach(id => {
   const el = document.getElementById(id);
   if (el) el.addEventListener("change", renderFiltered);
 });
+
 
     renderFiltered();
 
@@ -1956,7 +1980,86 @@ document.getElementById("periodInvoiceBtn").onclick = async () => {
     console.error("❌ Fout bij laden facturen:", err);
     showToast("Fout bij laden facturen", "error");
   }
+     // ---------- 🏷️ Bulk Facturatie per Tag ----------
+document.getElementById("tagInvoiceBtn").onclick = async () => {
+  openModal("Bulk Facturatie per Tag", [
+    { id: "tag", label: "Selecteer Tag", type: "select", options: tags.map(t => t.name) }
+  ], async (vals) => {
+    const tag = vals.tag;
+    if (!tag) {
+      showToast("Geen tag geselecteerd", "warning");
+      return;
+    }
+
+    // 🧩 Haal planningen op voor deze tag
+    const previewRes = await fetch(`/api/planning/tag-preview?tag=${encodeURIComponent(tag)}`);
+    const previewData = await previewRes.json();
+    if (!previewRes.ok || !Array.isArray(previewData) || !previewData.length) {
+      showToast(previewData.error || "Geen planningen gevonden", "warning");
+      return;
+    }
+
+    // 🧾 Bouw tabel met checkboxes
+    const checkboxes = previewData.map(p => ({
+      id: p.id,
+      label: `${p.client_name} – ${p.description} (€${p.price_inc}) op ${p.date.split("T")[0]}`
+    }));
+
+    const modalContent = document.createElement("div");
+    modalContent.innerHTML = `
+      <p class="mb-3 text-gray-700 dark:text-gray-300">Selecteer welke planningen je wilt factureren (Tag: ${tag}):</p>
+      <div class="max-h-64 overflow-y-auto border p-2 rounded space-y-1 dark:border-gray-700">
+        ${checkboxes.map(c =>
+          `<label class="flex items-center gap-2">
+             <input type="checkbox" class="chkPlanning" value="${c.id}" checked>
+             <span>${c.label}</span>
+           </label>`
+        ).join("")}
+      </div>
+      <div class="flex justify-end gap-2 mt-4">
+        <button id="cancelTagBulkBtn" class="btn btn-secondary">Annuleren</button>
+        <button id="confirmTagBulkBtn" class="btn btn-ok">Verzenden</button>
+      </div>
+    `;
+
+    const modalOverlay = document.createElement("div");
+    modalOverlay.className = "modal-overlay";
+    modalOverlay.appendChild(modalContent);
+    document.body.appendChild(modalOverlay);
+
+    // ❌ Annuleren
+    document.getElementById("cancelTagBulkBtn").onclick = () => modalOverlay.remove();
+
+    // ✅ Verzenden
+    document.getElementById("confirmTagBulkBtn").onclick = async () => {
+      const selectedIds = [...modalContent.querySelectorAll(".chkPlanning:checked")].map(i => i.value);
+      if (!selectedIds.length) {
+        showToast("Geen planningen geselecteerd", "warning");
+        return;
+      }
+
+      showToast(`Versturen van ${selectedIds.length} facturen gestart...`, "info");
+
+      const res = await fetch("/api/invoices-yuki/tag", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tag, selectedIds }),
+      });
+
+      const data = await res.json();
+      modalOverlay.remove();
+
+      if (res.ok) showToast(data.summary || "Facturatie gestart", "success");
+      else showToast(data.error || "Fout bij verzenden", "error");
+
+      await renderInvoices();
+      };
+    });
+  };
 }
+
+
+
 
 // ---------- 🧾 Factuur detail ----------
 function openInvoiceDetail(i) {
@@ -1967,7 +2070,8 @@ function openInvoiceDetail(i) {
     { id: "amount", label: "Bedrag", value: `€${Number(i.amount || 0).toFixed(2)}`, readonly: true },
     { id: "date", label: "Datum", value: i.created_at?.split("T")[0] || "-", readonly: true },
     { id: "method", label: "Methode", value: i.method || "-", readonly: true },
-    { id: "status", label: "Status", value: i.status || "open", readonly: true },
+    { id: "status", label: "Toor Status", value: i.status || "open", readonly: true },
+    { id: "yuki_status", label: "Yuki Status", value: i.yuki_status || "-", readonly: true },
   ], null, null, true);
 }
 

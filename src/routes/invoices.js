@@ -27,6 +27,20 @@ router.get("/", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+// GET – lijst met unieke methodes
+router.get("/methods", async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT DISTINCT LOWER(COALESCE(method, 'maandelijks')) AS method
+      FROM invoices
+      ORDER BY method ASC
+    `);
+    res.json(rows.map(r => r.method));
+  } catch (err) {
+    console.error("DB error (get invoice methods):", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 /** ✅ GET – factuur per id **/
 router.get("/:id", async (req, res) => {
@@ -81,5 +95,7 @@ router.put("/:id", async (req, res) => {
     res.status(500).json({ error: "Database update error" });
   }
 });
+
+
 
 export default router;

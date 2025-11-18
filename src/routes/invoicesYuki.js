@@ -3,6 +3,7 @@ import express from "express";
 import { pool } from "../db.js";
 import axios from "axios";
 import dotenv from "dotenv";
+import xml2js from "xml2js";
 dotenv.config();
 
 const router = express.Router();
@@ -237,21 +238,22 @@ if (Array.isArray(req.body.typeServices) && req.body.typeServices.length) {
     await logYukiResult(row, result);
 
     // ✅ Nieuwe lokale invoice opslaan
-    try {
-      await pool.query(
-        `INSERT INTO invoices 
-           (planning_id, contract_id, client_name, date, amount, method, status, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
-        [
-          row.planning_id,
-          row.contract_id,
-          row.name,
-          row.date,
-          row.price_inc || 0,
-          "Klant",
-          result.success ? "Verzonden" : "Fout"
-        ]
-      );
+try {
+  await pool.query(
+    `INSERT INTO invoices 
+       (planning_id, contract_id, client_name, date, amount, method, status, yuki_status, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+    [
+      row.planning_id,
+      row.contract_id,
+      row.name,
+      row.date,
+      row.price_inc || 0,
+      "Klant",
+      result.success ? "Verzonden" : "Fout",
+      null // ✅ Nieuw veld – voorlopig leeg, wordt later gevuld bij Yuki-sync
+    ]
+  );
     } catch (e) {
       console.warn("⚠️ Kon invoice record niet opslaan (manual):", e.message);
     }
@@ -310,21 +312,22 @@ if (Array.isArray(selectedIds) && selectedIds.length) {
         const result = await sendInvoice(row);
         await logYukiResult(row, result);
 
-        try {
-          await pool.query(
-            `INSERT INTO invoices 
-               (planning_id, contract_id, client_name, date, amount, method, status, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
-            [
-              row.planning_id,
-              row.contract_id,
-              row.name,
-              row.date,
-              row.price_inc || 0,
-              "Tag",
-              result.success ? "Verzonden" : "Fout"
-            ]
-          );
+       try {
+  await pool.query(
+    `INSERT INTO invoices 
+       (planning_id, contract_id, client_name, date, amount, method, status, yuki_status, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+    [
+      row.planning_id,
+      row.contract_id,
+      row.name,
+      row.date,
+      row.price_inc || 0,
+      "Tag",
+      result.success ? "Verzonden" : "Fout",
+      null // ✅ nieuw veld – voorlopig leeg tot Yuki-sync
+    ]
+  );
         } catch (e) {
           console.warn("⚠️ Kon invoice record niet opslaan (tag):", e.message);
         }
@@ -390,21 +393,22 @@ router.post("/period", async (req, res) => {
         const result = await sendInvoice(row);
         await logYukiResult(row, result);
 
-        try {
-          await pool.query(
-            `INSERT INTO invoices 
-               (planning_id, contract_id, client_name, date, amount, method, status, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
-            [
-              row.planning_id,
-              row.contract_id,
-              row.name,
-              row.date,
-              row.price_inc || 0,
-              "Periode",
-              result.success ? "Verzonden" : "Fout"
-            ]
-          );
+       try {
+  await pool.query(
+    `INSERT INTO invoices 
+       (planning_id, contract_id, client_name, date, amount, method, status, yuki_status, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+    [
+      row.planning_id,
+      row.contract_id,
+      row.name,
+      row.date,
+      row.price_inc || 0,
+      "Periode",
+      result.success ? "Verzonden" : "Fout",
+      null // ✅ nieuw veld – voorlopig leeg, later gevuld bij Yuki-sync
+    ]
+  );
         } catch (e) {
           console.warn("⚠️ Kon invoice record niet opslaan (periode):", e.message);
         }
@@ -424,6 +428,238 @@ router.post("/period", async (req, res) => {
     });
   } catch (err) {
     console.error("❌ Fout /period:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// =========================================================
+// ✅ Route 4: Maandelijkse facturatie (dagelijkse batch)
+//    - pakt ALLE contracts waar maandelijkse_facturatie=true
+//    - en invoice_day == vandaag (1..31)
+// =========================================================
+router.post("/monthly", async (_req, res) => {
+  try {
+    const today = new Date();
+    const yyyy_mm_dd = today.toISOString().split("T")[0];
+    const day = today.getDate(); // 1..31
+
+    // Contract + Contact info (zonder planning)
+    const { rows } = await pool.query(`
+      SELECT 
+        c.id           AS client_id,
+        c.name         AS name,
+        c.email        AS email,
+        c.phone        AS phone,
+        c.address      AS address,
+        c.house_number AS house_number,
+        c.postcode     AS postcode,
+        c.city         AS city,
+        c.type_klant   AS type_klant,
+        ct.id          AS contract_id,
+        ct.description AS description,
+        ct.price_inc   AS price_inc,
+        ct.vat_pct     AS vat_pct,
+        ct.maandelijkse_facturatie,
+        ct.invoice_day
+      FROM contracts ct
+      JOIN contacts  c ON ct.contact_id = c.id
+      WHERE ct.maandelijkse_facturatie = true
+        AND ct.invoice_day = $1
+    `, [day]);
+
+    if (!rows.length) {
+      return res.json({ summary: "Geen maandcontracten voor vandaag", results: [] });
+    }
+
+    const sessionId = await authenticateYuki();
+    const results = [];
+
+    for (const row of rows) {
+      try {
+        // vul ontbrekende velden zoals date voor de XML + call
+        row.sessionId = sessionId;
+        row.date = yyyy_mm_dd;
+
+        const result = await sendInvoice(row);
+
+        // Log naar yuki_invoice_log (planning_id = NULL ok)
+        await logYukiResult({ ...row, planning_id: null }, result);
+
+        // Lokale invoices-tabel (method = Maandelijks)
+        try {
+  await pool.query(
+    `INSERT INTO invoices
+       (planning_id, contract_id, client_name, date, amount, method, status, yuki_status, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8, NOW())`,
+    [
+      null,
+      row.contract_id,
+      row.name,
+      row.date,
+      row.price_inc || 0,
+      "Maandelijks",
+      result.success ? "Verzonden" : "Fout",
+      null // ✅ nieuw veld – voorlopig leeg tot Yuki-status-sync
+    ]
+  );
+        } catch (e) {
+          console.warn("⚠️ Kon invoice record niet opslaan (maandelijks):", e.message);
+        }
+
+        results.push({
+          client: row.name,
+          date: row.date,
+          email: row.email,
+          amount: row.price_inc,
+          success: result.success,
+          message: result.message,
+        });
+      } catch (err) {
+        results.push({ client: row.name, success: false, message: err.message });
+      }
+    }
+
+    const ok = results.filter(r => r.success).length;
+    return res.json({
+      summary: `${results.length} maandfacturen verwerkt, ${ok} succesvol`,
+      results,
+    });
+  } catch (err) {
+    console.error("❌ Fout /monthly:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// =========================================================
+// 🔁 Route 5: Dagelijkse Yuki-status-sync
+// =========================================================
+router.post("/sync-status", async (req, res) => {
+  try {
+    const sessionId = await authenticateYuki();
+
+    // 1️⃣ Haal facturen op van de laatste 30 dagen
+    const start = new Date();
+    start.setDate(start.getDate() - 30);
+    const startDate = start.toISOString().split("T")[0];
+    const endDate = new Date().toISOString().split("T")[0];
+
+    const xmlReq = `
+       <GetSalesInvoices xmlns="urn:xmlns:http://www.theyukicompany.com:salesinvoices">
+        <sessionId>${sessionId}</sessionId>
+        <administrationId>${process.env.YUKI_ADMIN_ID}</administrationId>
+        <startDate>${startDate}</startDate>
+        <endDate>${endDate}</endDate>
+      </GetSalesInvoices>`;
+
+    const yukiResp = await callYukiSOAP(xmlReq, "GetSalesInvoices");
+    const parsed = parseYukiInvoices(yukiResp); // 👇 helper hieronder
+
+    let updated = 0;
+    for (const inv of parsed) {
+      const { id, status } = inv;
+      if (!id || !status) continue;
+      const q = await pool.query(
+        `UPDATE invoices SET yuki_status=$1 WHERE id::text LIKE $2 OR contract_id::text LIKE $2 RETURNING id`,
+        [status, `%${id}%`]
+      );
+      if (q.rowCount) updated += q.rowCount;
+    }
+
+    res.json({ summary: `${updated} lokale facturen bijgewerkt`, updated });
+  } catch (err) {
+    console.error("❌ Fout /sync-status:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------
+// 🧩 Helper: SOAP-aanroep + XML-parser
+// ---------------------------------------------------------
+
+
+async function callYukiSOAP(xmlBody, method) {
+  console.log("🧾 SOAP request:", xmlBody);
+  const { data } = await axios.post(
+  process.env.YUKI_INVOICE_URL || process.env.YUKI_BASE,
+  xmlBody,
+  {
+    headers: { "Content-Type": "text/xml; charset=utf-8", SOAPAction: method },
+  });
+   console.log("🧾 SOAP response:", data);
+  return data;
+}
+
+
+function parseYukiInvoices(xmlString) {
+  const result = [];
+  try {
+    const parsed = xml2js.parseStringSync
+      ? xml2js.parseStringSync(xmlString)
+      : (() => {
+          let r;
+          xml2js.parseString(xmlString, { explicitArray: false }, (e, res) => (r = res));
+          return r;
+        })();
+
+    const list =
+      parsed?.Envelope?.Body?.GetSalesInvoicesResponse?.GetSalesInvoicesResult?.SalesInvoices
+        ?.SalesInvoice || [];
+
+    for (const i of list) {
+      result.push({
+        id: i?.InvoiceNumber || i?.Id,
+        status: i?.Status || "Onbekend",
+      });
+    }
+  } catch (e) {
+    console.warn("⚠️ Fout bij XML-parse:", e.message);
+  }
+  return result;
+}
+// =========================================================
+// 🔁 Route: Dagelijkse Yuki-status-sync (REST API)
+// =========================================================
+router.post("/sync-status", async (_req, res) => {
+  try {
+    const since = new Date();
+    since.setDate(since.getDate() - 30);
+    const startDate = since.toISOString().split("T")[0];
+
+    // 1️⃣ Ophalen van Yuki REST API
+    const url = `${process.env.YUKI_API_URL}/SalesInvoices?administrationId=${process.env.YUKI_ADMIN_ID}&createdAfter=${startDate}`;
+    const { data } = await axios.get(url, {
+      headers: {
+        "Authorization": `Bearer ${process.env.YUKI_ACCESS_KEY}`,
+        "Accept": "application/json",
+      },
+    });
+
+    if (!Array.isArray(data)) {
+      console.warn("⚠️ Geen lijst ontvangen van Yuki:", data);
+      return res.json({ summary: "Geen facturen ontvangen van Yuki" });
+    }
+
+    // 2️⃣ Updaten lokale database
+    let updated = 0;
+    for (const inv of data) {
+      const status = inv.Status || inv.status || null;
+      const invoiceNumber = inv.InvoiceNumber?.toString() || inv.Id?.toString();
+      if (!invoiceNumber || !status) continue;
+
+      const q = await pool.query(
+        `UPDATE invoices
+           SET yuki_status=$1
+         WHERE client_name ILIKE $2
+            OR contract_id::text LIKE $3
+            OR id::text LIKE $3`,
+        [status, `%${inv.ContactName || ""}%`, `%${invoiceNumber}%`]
+      );
+      updated += q.rowCount;
+    }
+
+    res.json({ summary: `${updated} facturen bijgewerkt`, updated });
+  } catch (err) {
+    console.error("❌ Fout /sync-status (REST):", err.message);
     res.status(500).json({ error: err.message });
   }
 });
