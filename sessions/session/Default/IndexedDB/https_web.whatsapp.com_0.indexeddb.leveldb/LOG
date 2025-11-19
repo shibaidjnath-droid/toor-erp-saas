@@ -1,0 +1,60 @@
+2025/11/19-18:00:37.824 8c88 Reusing MANIFEST C:\Users\shiba\Desktop\TOOR ERP\TOOR ERP Kristalhelder TEST\sessions\session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2025/11/19-18:00:37.826 8c88 Recovering log #1554
+2025/11/19-18:00:37.974 8c88 Reusing old log C:\Users\shiba\Desktop\TOOR ERP\TOOR ERP Kristalhelder TEST\sessions\session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/001554.log 
+2025/11/19-18:00:44.749 8c88 Level-0 table #1571: started
+2025/11/19-18:00:44.765 8c88 Level-0 table #1571: 326644 bytes OK
+2025/11/19-18:00:44.767 8c88 Delete type=0 #1554
+2025/11/19-18:00:44.768 8c88 Manual compaction at level-0 from '\x00N\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00O\x00\x00\x00' @ 0 : 0; will stop at '\x00N\x00\x00\x05' @ 3052553 : 1
+2025/11/19-18:00:44.769 8c88 Compacting 1@0 + 0@1 files
+2025/11/19-18:00:44.970 8c88 Generated table #1572@0: 4615 keys, 115755 bytes
+2025/11/19-18:00:44.976 8c88 Generated table #1573@0: 335 keys, 32388 bytes
+2025/11/19-18:00:44.976 8c88 Compacted 1@0 + 0@1 files => 148143 bytes
+2025/11/19-18:00:44.978 8c88 compacted to: files[ 0 2 21 0 0 0 0 ]
+2025/11/19-18:00:44.979 8c88 Delete type=2 #1571
+2025/11/19-18:00:44.979 8c88 Manual compaction at level-0 from '\x00N\x00\x00\x05' @ 3052553 : 1 .. '\x00O\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/11/19-18:00:51.859 5a74 Compacting 1@1 + 8@2 files
+2025/11/19-18:00:51.979 5a74 Generated table #1574@1: 20398 keys, 2238181 bytes
+2025/11/19-18:00:52.072 5a74 Generated table #1575@1: 9196 keys, 2137071 bytes
+2025/11/19-18:00:52.180 5a74 Generated table #1576@1: 26931 keys, 2155226 bytes
+2025/11/19-18:00:52.386 5a74 Generated table #1577@1: 102908 keys, 2254254 bytes
+2025/11/19-18:00:52.647 5a74 Generated table #1578@1: 98743 keys, 2246855 bytes
+2025/11/19-18:00:52.857 5a74 Generated table #1579@1: 98344 keys, 2248526 bytes
+2025/11/19-18:00:53.120 5a74 Generated table #1580@1: 99502 keys, 2247623 bytes
+2025/11/19-18:00:53.155 5a74 Generated table #1581@1: 11979 keys, 298531 bytes
+2025/11/19-18:00:53.156 5a74 Compacted 1@1 + 8@2 files => 15826267 bytes
+2025/11/19-18:00:53.157 5a74 compacted to: files[ 0 1 21 0 0 0 0 ]
+2025/11/19-18:00:53.158 5a74 Delete type=2 #1561
+2025/11/19-18:00:53.158 5a74 Delete type=2 #1562
+2025/11/19-18:00:53.158 5a74 Delete type=2 #1563
+2025/11/19-18:00:53.158 5a74 Delete type=2 #1564
+2025/11/19-18:00:53.158 5a74 Delete type=2 #1565
+2025/11/19-18:00:53.158 5a74 Delete type=2 #1566
+2025/11/19-18:00:53.158 5a74 Delete type=2 #1567
+2025/11/19-18:00:53.158 5a74 Delete type=2 #1568
+2025/11/19-18:00:53.158 5a74 Delete type=2 #1573
+2025/11/19-18:00:53.320 5a74 Compacting 1@1 + 11@2 files
+2025/11/19-18:00:53.858 5a74 Generated table #1582@1: 75404 keys, 2239243 bytes
+2025/11/19-18:00:54.125 5a74 Generated table #1583@1: 16159 keys, 2176778 bytes
+2025/11/19-18:00:54.209 5a74 Generated table #1584@1: 2475 keys, 2152534 bytes
+2025/11/19-18:00:54.357 5a74 Generated table #1585@1: 2692 keys, 2153130 bytes
+2025/11/19-18:00:54.508 5a74 Generated table #1586@1: 3041 keys, 2158174 bytes
+2025/11/19-18:00:54.598 5a74 Generated table #1587@1: 2354 keys, 2148935 bytes
+2025/11/19-18:00:54.755 5a74 Generated table #1588@1: 2461 keys, 2153067 bytes
+2025/11/19-18:00:54.932 5a74 Generated table #1589@1: 10279 keys, 2165336 bytes
+2025/11/19-18:00:55.178 5a74 Generated table #1590@1: 29225 keys, 2261778 bytes
+2025/11/19-18:00:55.474 5a74 Generated table #1591@1: 27170 keys, 2262821 bytes
+2025/11/19-18:00:55.484 5a74 Generated table #1592@1: 569 keys, 54085 bytes
+2025/11/19-18:00:55.484 5a74 Compacted 1@1 + 11@2 files => 21925881 bytes
+2025/11/19-18:00:55.485 5a74 compacted to: files[ 0 0 21 0 0 0 0 ]
+2025/11/19-18:00:55.486 5a74 Delete type=2 #1544
+2025/11/19-18:00:55.486 5a74 Delete type=2 #1545
+2025/11/19-18:00:55.486 5a74 Delete type=2 #1546
+2025/11/19-18:00:55.486 5a74 Delete type=2 #1547
+2025/11/19-18:00:55.486 5a74 Delete type=2 #1548
+2025/11/19-18:00:55.486 5a74 Delete type=2 #1549
+2025/11/19-18:00:55.486 5a74 Delete type=2 #1550
+2025/11/19-18:00:55.486 5a74 Delete type=2 #1551
+2025/11/19-18:00:55.486 5a74 Delete type=2 #1558
+2025/11/19-18:00:55.486 5a74 Delete type=2 #1559
+2025/11/19-18:00:55.486 5a74 Delete type=2 #1560
+2025/11/19-18:00:55.486 5a74 Delete type=2 #1572

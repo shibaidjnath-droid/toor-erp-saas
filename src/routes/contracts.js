@@ -422,15 +422,24 @@ if (!desc && Array.isArray(typeService) && typeService.length) {
       }
     }
 
-    contract.price_ex = contract.price_ex ? Number(contract.price_ex) : 0;
-    contract.price_inc = contract.price_inc ? Number(contract.price_inc) : 0;
+    contract.price_ex = contract.price_ex !== null ? Number(contract.price_ex) : null;
+contract.price_inc = contract.price_inc !== null ? Number(contract.price_inc) : null;
 
     try {
       await rebuildSeriesForContract(contract, { logPrefix: "PUT /contracts – " });
     } catch (err) {
       console.warn("❌ Slimme planning niet gelukt (PUT):", err.message);
     }
-
+// 🧠 Automatische regenerate trigger (achtergrond)
+try {
+  const baseUrl = process.env.LOCAL_URL || process.env.APP_URL;
+  await fetch(`${baseUrl}/api/planning/rebuild/${contractId}`, {
+    method: "POST"
+  });
+  console.log(`🔁 Auto-rebuild gestart voor contract ${contractId}`);
+} catch (err) {
+  console.warn("⚠️ Auto-rebuild trigger mislukt:", err.message);
+}
     if (maandelijkse_facturatie !== undefined) {
       if (maandelijkse_facturatie === "Ja" || maandelijkse_facturatie === true) {
         await pool.query(

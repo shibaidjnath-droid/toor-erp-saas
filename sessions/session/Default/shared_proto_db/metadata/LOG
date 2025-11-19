@@ -1,2 +1,3 @@
-2025/11/17-22:31:03.154 8af4 Creating DB C:\Users\shiba\Desktop\TOOR ERP\TOOR ERP Kristalhelder TEST\sessions\session\Default\shared_proto_db\metadata since it was missing.
-2025/11/17-22:31:03.186 8af4 Reusing MANIFEST C:\Users\shiba\Desktop\TOOR ERP\TOOR ERP Kristalhelder TEST\sessions\session\Default\shared_proto_db\metadata/MANIFEST-000001
+2025/11/18-22:31:06.940 87c Reusing MANIFEST C:\Users\shiba\Desktop\TOOR ERP\TOOR ERP Kristalhelder TEST\sessions\session\Default\shared_proto_db\metadata/MANIFEST-000001
+2025/11/18-22:31:06.992 87c Recovering log #3
+2025/11/18-22:31:06.993 87c Reusing old log C:\Users\shiba\Desktop\TOOR ERP\TOOR ERP Kristalhelder TEST\sessions\session\Default\shared_proto_db\metadata/000003.log 

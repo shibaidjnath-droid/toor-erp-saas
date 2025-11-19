@@ -4,6 +4,8 @@ dotenv.config();
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
+
+// Routers
 import clientsRouter from "./routes/clients.js";
 import invoicesRouter from "./routes/invoices.js";
 import webhookRouter from './routes/webhook.js';
@@ -23,10 +25,48 @@ import rolesRouter from './routes/roles.js';
 import serviceTypesRouter from './routes/serviceTypes.js';
 import importExportRouter from './routes/importExport.js';
 import kvkRouter from "./routes/kvk.js";
+import memberReasonsRouter from './routes/memberReasons.js';
+import assistantRouter from "./routes/assistant.js";
 
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+
+/* ============================================================
+   🌍 GLOBAL DATE NORMALIZER – FIX ALLE DATUMPROBLEMEN
+   ============================================================ */
+function fixDatesMiddleware(req, _res, next) {
+
+  function fix(obj) {
+    if (!obj || typeof obj !== "object") return;
+
+    for (const key of Object.keys(obj)) {
+      const value = obj[key];
+
+      // Match: yyyy-mm-dd exact
+      if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        const [y, m, d] = value.split("-").map(Number);
+        // Zet altijd 12:00 → voorkomt timezone shift (dag -1)
+        obj[key] = new Date(y, m - 1, d, 12, 0, 0).toISOString();
+      }
+
+      // Recurse
+      if (typeof value === "object") fix(value);
+    }
+  }
+
+  fix(req.body);
+  fix(req.query);
+
+  next();
+}
+
+app.use(fixDatesMiddleware);
+/* ============================================================
+   EINDE GLOBAL DATE FIX
+   ============================================================ */
+
 
 const port = process.env.PORT || 5000;
 
@@ -55,6 +95,8 @@ app.use('/api/roles', rolesRouter);
 app.use('/api/service-types', serviceTypesRouter);
 app.use('/api/import-export', importExportRouter);
 app.use("/api/whatsapp", whatsappRouter);
+app.use('/api/member-reasons', memberReasonsRouter);
+app.use("/api/assistant", assistantRouter);
 
 // dashboard
 app.get('/dashboard', (_req, res) => {
@@ -66,15 +108,16 @@ app.get('/thanks', (_req, res) => {
   res.send('<h2>Bedankt voor je betaling!</h2><p>Je factuur is succesvol voldaan.</p>');
 });
 app.get('/betaling/voltooid', (_req, res) => {
-  res.send('<h2>Bedankt voor je betaling!</h2><p>Uw betaling is succesvol ontvangen.</p>');
+  res.send('<h2>Bedankt voor uw betaling!</h2><p>Uw betaling is succesvol ontvangen.</p>');
 });
 
-// ⏰ Dagelijkse maandfacturatie om 15:00 Europe/Amsterdam
+// Schedulers
 import cron from 'node-cron';
 import axios from 'axios';
 
 const BASE_URL = process.env.APP_URL || `http://localhost:${port}`;
 
+// Dagelijkse maandfacturatie
 cron.schedule('0 15 * * *', async () => {
   try {
     console.log('🕒 Start maandfacturatie-batch (15:00)...');
@@ -85,8 +128,7 @@ cron.schedule('0 15 * * *', async () => {
   }
 }, { timezone: 'Europe/Amsterdam' });
 
-
-/// 🔁 Dagelijkse Yuki-status-sync om 16:00 (REST)
+// Dagelijkse status-sync
 cron.schedule('0 16 * * *', async () => {
   try {
     console.log('🕓 Start Yuki-status-sync (REST, 16:00)…');
@@ -100,6 +142,7 @@ cron.schedule('0 16 * * *', async () => {
 function cryptoRandomId() {
   return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
 }
+
 import { initWhatsApp } from "./routes/whatsapp.js";
 
 app.listen(port, () => {
@@ -110,11 +153,3 @@ app.listen(port, () => {
     initWhatsApp();
   }, 2000);
 });
-
-
-
-
-
-
-
-

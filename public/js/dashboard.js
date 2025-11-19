@@ -13,6 +13,7 @@ let settings = {
   frequencies: ["Wekelijks", "Maandelijks", "Kwartaal"],
   roles: ["Schoonmaker", "Teamleider", "Planner"],
   tags: ["Particulier", "Zakelijk", "VvE"],
+  reasons: ["Vakantie", "Ziek", "Niet meer werkzaam bij ons"],
 };
 
 
@@ -25,6 +26,47 @@ let emailLog = [];
 let leads = [];
 let quotes = [];
 let tags = [];
+
+// =========================================================
+// 🌍 Centrale datum helpers (NL formaat)
+// =========================================================
+
+// ISO → dd-mm-yyyy
+function toNLDate(iso) {
+  if (!iso) return "";
+  try {
+    const [y, m, d] = iso.split("T")[0].split("-");
+    return `${d}-${m}-${y}`;
+  } catch {
+    return iso;
+  }
+}
+
+// dd-mm-yyyy → yyyy-mm-dd
+function fromNLDate(nl) {
+  if (!nl) return "";
+  try {
+    const [d, m, y] = nl.split("-");
+    return `${y}-${m}-${d}`;
+  } catch {
+    return nl;
+  }
+}
+
+// =========================================================
+// 🛠️ Helpers om datumvelden in modals NL ↔ ISO te converteren
+// =========================================================
+function nlToIsoInput(nlDate) {
+  if (!nlDate) return "";
+  const [d, m, y] = nlDate.split("-");
+  return `${y}-${m}-${d}`;
+}
+
+function isoInputToNL(iso) {
+  if (!iso) return "";
+  const [y, m, d] = iso.split("-");
+  return `${d}-${m}-${y}`;
+}
 
 // 🔁 Universele fetch-functie om altijd actuele data te laden
 async function fetchClients() {
@@ -1237,12 +1279,24 @@ async function loadPlanningData() {
   const memberId = document.getElementById("memberFilter")?.value || "";
   const status = document.getElementById("statusFilter")?.value || "";
 
-  const url = new URL("/api/planning/schedule", window.location.origin);
-  url.searchParams.set("range", filter === "date" ? "day" : filter);
-  if (memberId) url.searchParams.set("memberId", memberId);
-  if (status) url.searchParams.set("status", status);
-  if (filter === "date" && dateInput.value)
-    url.searchParams.set("start", dateInput.value);
+ const url = new URL("/api/planning/schedule", window.location.origin);
+
+// map FE filter naar backend labels
+let rangeValue = filter;
+
+if (filter === "date") {
+  rangeValue = "specifieke datum";
+}
+
+url.searchParams.set("range", rangeValue);
+
+if (memberId) url.searchParams.set("memberId", memberId);
+if (status) url.searchParams.set("status", status);
+
+// bij specifieke datum altijd start waarde meesturen
+if (rangeValue === "specifieke datum" && dateInput.value) {
+  url.searchParams.set("start", dateInput.value); // yyyy-mm-dd
+}
 
   // 👇 nieuwe toevoeging
 const weekNumber = document.getElementById("filterWeek")?.value;
@@ -1321,6 +1375,7 @@ function openPlanningDetail(p) {
   }
 
   openModal(`Planning – ${p.customer || "-"}`, [
+    { id: "id", label: "Klant ID", value: p.id, readonly: true },
     { id: "address",  label: "Adres",  value: `${p.address || ""} ${p.house_number || ""}, ${p.city || ""}`, readonly: true },
     { id: "customer", label: "Klant",  value: p.customer || "-", readonly: true },
     { id: "date",     label: "Datum",  type: "date", value: p.date ? p.date.split("T")[0] : "" },
@@ -1462,19 +1517,17 @@ async function renderPlanning() {
              placeholder="Zoek klant, adres, member..."
              class="border rounded px-2 py-1 w-64 text-sm bg-white text-gray-800
                     dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600" />
-
-      <button id="generatePlanningBtn"
-              class="bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700">
-        ⚙️ Genereer
-      </button>
       <button id="newPlanningBtn"
               class="bg-primary text-white px-3 py-2 rounded hover:bg-blue-700">
         + Nieuw Item
       </button>
-      <button id="sharePlanningBtn"
+<button id="sharePlanningBtn"
               class="bg-primary text-white px-3 py-2 rounded hover:bg-blue-700">
         📤 Deel planning
       </button>
+      <button id="bulkUpdateBtn" class="bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700">
+  Bulk Update
+</button>
     </div>
   </div>
   <div id="planningTable"></div>`;
@@ -1541,6 +1594,153 @@ async function renderPlanning() {
       }, 0);
     };
   }
+// ---------- 🔥 Bulk Update Planning Status ----------
+document.getElementById("bulkUpdateBtn").onclick = async () => {
+  openModal("Bulk Update – Planningen Afgerond Markeren", [
+    {
+      id: "periode",
+      label: "Periode",
+      type: "select",
+      options: ["Vandaag", "Morgen", "Deze week", "Deze maand"]
+    }
+  ], async (vals) => {
+
+    // 🕒 Vandaag = NL datum, geen UTC
+function toNLDate(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;   // YYYY-MM-DD
+}
+
+const today = new Date();
+let startDate, endDate;
+
+switch (vals.periode) {
+
+  case "Vandaag":
+    startDate = endDate = toNLDate(today);
+    break;
+
+  case "Morgen":
+    const tm = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+    startDate = endDate = toNLDate(tm);
+    break;
+
+  case "Deze week":
+    // dagnummer (0=zo → 7, 1=ma etc)
+    const day = today.getDay() || 7;
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - (day - 1));
+
+    const friday = new Date(monday);
+    friday.setDate(monday.getDate() + 4);
+
+    startDate = toNLDate(monday);
+    endDate = toNLDate(friday);
+    break;
+
+  case "Deze maand":
+    const y = today.getFullYear();
+    const m = today.getMonth();
+
+    const first = new Date(y, m, 1);
+    const last = new Date(y, m + 1, 0);
+
+    startDate = toNLDate(first);
+    endDate = toNLDate(last);
+    break;
+
+  default:
+    showToast("Ongeldige periode", "error");
+    return;
+}
+
+
+    // 🧩 Planning preview ophalen
+    const previewRes = await fetch(`/api/planning/period-preview/bulk?startDate=${startDate}&endDate=${endDate}`);
+    const previewData = await previewRes.json();
+
+    if (!previewRes.ok || !Array.isArray(previewData) || !previewData.length) {
+      showToast(previewData.error || "Geen planningen gevonden", "warning");
+      return;
+    }
+
+    // 🧾 Checkboxes opbouwen
+    const checkboxes = previewData.map(p => ({
+      id: p.id,
+      label: `${p.client_name} – ${p.description} (€${p.price_inc}) op ${p.date.split("T")[0]}`
+    }));
+
+
+    // 🧾 HTML voor checkboxlijst
+const modalContentHTML = `
+  <p class="mb-3 text-gray-700 dark:text-gray-300">
+    Selecteer welke planningen je wilt markeren als afgerond (${startDate} t/m ${endDate}):
+  </p>
+
+  <div class="max-h-64 overflow-y-auto border p-2 rounded space-y-1 dark:border-gray-700">
+    ${checkboxes.map(c =>
+      `<label class="flex items-center gap-2">
+         <input type="checkbox" class="chkPlanning" value="${c.id}" checked>
+         <span>${c.label}</span>
+       </label>`
+    ).join("")}
+  </div>
+
+  <div class="flex justify-end gap-2 mt-4">
+    <button id="cancelBulkBtn" class="btn btn-secondary">Annuleren</button>
+    <button id="confirmBulkBtn" class="btn btn-ok">Status Afgerond</button>
+  </div>
+`;
+
+// ✔ overlay (donkere achtergrond)
+const overlay = document.createElement("div");
+overlay.className = "modal-overlay";
+
+// ✔ modal-card (zelfde styling als openModal())
+const card = document.createElement("div");
+card.className = "modal-card";
+card.innerHTML = modalContentHTML;
+
+overlay.appendChild(card);
+document.body.appendChild(overlay);
+
+// ❌ Annuleren
+document.getElementById("cancelBulkBtn").onclick = () => overlay.remove();
+
+// ✅ Confirm
+document.getElementById("confirmBulkBtn").onclick = async () => {
+  const selectedIds = [...card.querySelectorAll(".chkPlanning:checked")].map(i => i.value);
+
+  if (!selectedIds.length) {
+    showToast("Geen planningen geselecteerd", "warning");
+    return;
+  }
+
+  showToast(`Bijwerken van ${selectedIds.length} planningen gestart...`, "info");
+
+  const res = await fetch("/api/planning/bulk-complete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ selectedIds })
+  });
+
+  const data = await res.json();
+  overlay.remove();
+
+  if (res.ok) {
+    showToast(`${data.updated} planningen bijgewerkt`, "success");
+    await loadTab("planning");
+  } else {
+    showToast(data.error || "Fout bij bulk update", "error");
+  }
+};
+
+  });
+};
+
+
 
   // ✅ Buttons koppelen (veiligheid)
   const genBtn = document.getElementById("generatePlanningBtn");
@@ -1910,12 +2110,13 @@ document.getElementById("periodInvoiceBtn").onclick = async () => {
     }
 
     // 🧩 Haal planningen in deze periode op (preview)
-    const previewRes = await fetch(`/api/planning/period-preview?startDate=${startDate}&endDate=${endDate}`);
-    const previewData = await previewRes.json();
-    if (!previewRes.ok || !Array.isArray(previewData) || !previewData.length) {
-      showToast(previewData.error || "Geen planningen gevonden", "warning");
-      return;
-    }
+    const previewRes = await fetch(`/api/planning/period-preview/facturatie?startDate=${startDate}&endDate=${endDate}`);
+const previewData = await previewRes.json();
+
+if (!previewRes.ok || !Array.isArray(previewData) || !previewData.length) {
+  showToast(previewData.error || "Geen planningen gevonden", "warning");
+  return;
+}
 
     // 🧾 Bouw tabel met checkboxes
     const checkboxes = previewData.map(p => ({
@@ -1940,38 +2141,46 @@ document.getElementById("periodInvoiceBtn").onclick = async () => {
       </div>
     `;
 
-    const modalOverlay = document.createElement("div");
-    modalOverlay.className = "modal-overlay";
-    modalOverlay.appendChild(modalContent);
-    document.body.appendChild(modalOverlay);
+   // --- Nieuwe uniforme modal --- //
+const overlay = document.createElement("div");
+overlay.className = "modal-overlay";
 
-    // ❌ Annuleren
-    document.getElementById("cancelBulkBtn").onclick = () => modalOverlay.remove();
+const card = document.createElement("div");
+card.className = "modal-card";
+card.innerHTML = modalContent.innerHTML;  // behoudt de HTML die je eerder bouwde
 
-    // ✅ Verzenden
-    document.getElementById("confirmBulkBtn").onclick = async () => {
-      const selectedIds = [...modalContent.querySelectorAll(".chkPlanning:checked")].map(i => i.value);
-      if (!selectedIds.length) {
-        showToast("Geen planningen geselecteerd", "warning");
-        return;
-      }
+overlay.appendChild(card);
+document.body.appendChild(overlay);
 
-      showToast(`Versturen van ${selectedIds.length} facturen gestart...`, "info");
+// ❌ Annuleren
+card.querySelector("#cancelBulkBtn").onclick = () => overlay.remove();
 
-      const res = await fetch("/api/invoices-yuki/period", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ startDate, endDate, selectedIds }),
-      });
+// ✅ Verzenden
+card.querySelector("#confirmBulkBtn").onclick = async () => {
+  const selectedIds = [...card.querySelectorAll(".chkPlanning:checked")].map(i => i.value);
 
-      const data = await res.json();
-      modalOverlay.remove();
+  if (!selectedIds.length) {
+    showToast("Geen planningen geselecteerd", "warning");
+    return;
+  }
 
-      if (res.ok) showToast(data.summary || "Facturatie gestart", "success");
-      else showToast(data.error || "Fout bij verzenden", "error");
+  showToast(`Versturen van ${selectedIds.length} facturen gestart...`, "info");
 
-      await renderInvoices();
-    };
+  const res = await fetch("/api/invoices-yuki/period", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ startDate, endDate, selectedIds }),
+  });
+
+  const data = await res.json();
+  overlay.remove();
+
+  if (res.ok) showToast(data.summary || "Facturatie gestart", "success");
+  else showToast(data.error || "Fout bij verzenden", "error");
+
+  await renderInvoices();
+};
+
   });
 };
 
@@ -2022,40 +2231,47 @@ document.getElementById("tagInvoiceBtn").onclick = async () => {
       </div>
     `;
 
-    const modalOverlay = document.createElement("div");
-    modalOverlay.className = "modal-overlay";
-    modalOverlay.appendChild(modalContent);
-    document.body.appendChild(modalOverlay);
+// --- Nieuwe uniforme modal --- //
+const overlay = document.createElement("div");
+overlay.className = "modal-overlay";
 
-    // ❌ Annuleren
-    document.getElementById("cancelTagBulkBtn").onclick = () => modalOverlay.remove();
+const card = document.createElement("div");
+card.className = "modal-card";
+card.innerHTML = modalContent.innerHTML;
 
-    // ✅ Verzenden
-    document.getElementById("confirmTagBulkBtn").onclick = async () => {
-      const selectedIds = [...modalContent.querySelectorAll(".chkPlanning:checked")].map(i => i.value);
-      if (!selectedIds.length) {
-        showToast("Geen planningen geselecteerd", "warning");
-        return;
-      }
+overlay.appendChild(card);
+document.body.appendChild(overlay);
 
-      showToast(`Versturen van ${selectedIds.length} facturen gestart...`, "info");
+// ❌ Annuleren
+card.querySelector("#cancelTagBulkBtn").onclick = () => overlay.remove();
 
-      const res = await fetch("/api/invoices-yuki/tag", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tag, selectedIds }),
-      });
+// ✅ Verzenden
+card.querySelector("#confirmTagBulkBtn").onclick = async () => {
+  const selectedIds = [...card.querySelectorAll(".chkPlanning:checked")].map(i => i.value);
 
-      const data = await res.json();
-      modalOverlay.remove();
+  if (!selectedIds.length) {
+    showToast("Geen planningen geselecteerd", "warning");
+    return;
+  }
 
-      if (res.ok) showToast(data.summary || "Facturatie gestart", "success");
-      else showToast(data.error || "Fout bij verzenden", "error");
+  showToast(`Versturen van ${selectedIds.length} facturen gestart...`, "info");
 
-      await renderInvoices();
-      };
-    });
-  };
+  const res = await fetch("/api/invoices-yuki/tag", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tag, selectedIds }),
+  });
+
+  const data = await res.json();
+  overlay.remove();
+
+  if (res.ok) showToast(data.summary || "Facturatie gestart", "success");
+  else showToast(data.error || "Fout bij verzenden", "error");
+
+  await renderInvoices();
+};
+ });
+};
 }
 
 
@@ -2148,18 +2364,20 @@ async function renderMembers() {
 
     // ✅ Tabelrijen
     const rows = members.map(m => [
-      m.name,
-      m.email || "-",
-      m.phone || "-",
-      (m.roles || []).join(", ") || "-",
-      m.active ? "✅ Actief" : "⛔ Inactief",
-      m.end_date ? m.end_date.split("T")[0] : "-"
+       m.name,
+        m.email || "-",
+  m.phone || "-",
+  (m.roles || []).join(", "),
+  m.reden || "-",
+  m.van_date ? m.van_date.split("T")[0] : "-",
+  m.end_date ? m.end_date.split("T")[0] : "-",
+  m.active ? "Actief" : "Inactief"
     ]);
 
     list.innerHTML = `
     <div class="overflow-y-auto max-h-[70vh] relative">
     ${tableHTML(
-      ["Naam", "E-mail", "Telefoon", "Rol(len)", "Status", "Tot en met"],
+      ["Naam", "E-mail", "Telefoon", "Rol(len)", "Reden", "Van", "Tot en met", "Status"],
       rows
     )}
     </div>
@@ -2178,7 +2396,6 @@ async function renderMembers() {
         { id: "phone", label: "Telefoon" },
         { id: "roles", label: "Rol(len)", type: "multiselect", options: settings.roles },
         { id: "active", label: "Status", type: "select", options: ["Actief", "Inactief"], value: "Actief" },
-        { id: "end_date", label: "Tot en met", type: "date" },
       ], async (vals) => {
         try {
           vals.roles = Array.isArray(vals.roles) ? vals.roles : [];
@@ -2208,35 +2425,122 @@ async function renderMembers() {
 
 function openMemberDetail(m) {
   openModal(`Member bewerken – ${m.name}`, [
+
     { id: "name", label: "Naam", value: m.name },
     { id: "email", label: "E-mail", value: m.email },
     { id: "phone", label: "Telefoon", value: m.phone },
-    { id: "roles", label: "Rol(len)", type: "multiselect", options: settings.roles, value: m.roles || [] },
-    { id: "active", label: "Status", type: "select", options: ["Actief", "Inactief"], value: m.active ? "Actief" : "Inactief" },
-    { id: "end_date", label: "Tot en met", type: "date", value: m.end_date ? m.end_date.split("T")[0] : "" },
-  ], async (vals) => {
-    try {
-      vals.roles = Array.isArray(vals.roles) ? vals.roles : [];
-      vals.active = vals.active === "Actief"; // ✅ converteer dropdown naar boolean
 
-      const res = await fetch(`/api/members/${m.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(vals),
-      });
-      if (!res.ok) throw new Error("Fout bij opslaan member");
-      const updated = await res.json();
-      Object.assign(m, updated);
-      showToast("Member opgeslagen", "success");
-      renderMembers();
-    } catch (err) {
-      console.error("❌ Member update error:", err);
-      showToast("Fout bij opslaan member", "error");
+    { id: "roles", label: "Rol(len)", type: "multiselect",
+      options: settings.roles, value: m.roles || [] },
+
+    { id: "active", label: "Status", type: "select",
+      options: ["Actief", "Inactief"],
+      value: m.active ? "Actief" : "Inactief"
+    },
+
+    { id: "reden", label: "Reden", type: "select",
+      options: ["", ...settings.reasons],
+      value: m.reden || ""
+    },
+
+    { id: "van_date", label: "Van (datum)", type: "date",
+      value: m.van_date ? m.van_date.split("T")[0] : "" },
+
+    { id: "end_date", label: "Tot en met (datum)", type: "date",
+      value: m.end_date ? m.end_date.split("T")[0] : "" },
+
+    // -----------------------------------------------
+    // ⭐ CUSTOM INFO BLOK (stap 2)
+    // -----------------------------------------------
+    {
+      id: "reactivateInfo",
+      type: "custom",
+      render: () => {
+        if (!m.end_date) return "";
+
+        const dt = new Date(m.end_date);
+        dt.setDate(dt.getDate() + 1);
+
+        const formatted = dt.toISOString().split("T")[0];
+
+        return `
+          <div data-id="reactivateInfoBox"
+               class="p-2 mt-2 rounded bg-blue-100 text-blue-800 
+                      dark:bg-blue-900 dark:text-blue-200 text-sm">
+            🔄 Deze medewerker wordt automatisch weer actief op 
+            <strong>${formatted}</strong>
+          </div>
+        `;
+      }
+    },
+    {
+  id: "historyBlock",
+  type: "custom",
+  render: () => `
+    <div class="mt-4">
+      <h3 class="font-semibold mb-2">Historie</h3>
+      <div id="memberHistory" class="space-y-2 text-sm text-gray-700 dark:text-gray-300">
+        <div>⏳ Laden...</div>
+      </div>
+    </div>
+  `
+}
+
+  ], async (vals) => {
+    // ---------------------------------------
+    // 🔄 BASIC CLEANUP / CONVERSIONS
+    // ---------------------------------------
+    vals.roles = Array.isArray(vals.roles) ? vals.roles : [];
+    vals.active = vals.active === "Actief";  // dropdown → boolean
+
+    // ---------------------------------------
+    // 🔍 VALIDATIES OP BASIS VAN REDEN
+    // ---------------------------------------
+    if (!vals.active && !vals.reden) {
+      return showToast("Reden is verplicht wanneer een medewerker Inactief wordt gezet", "error");
     }
+
+    if (vals.reden === "Ziek" && !vals.van_date) {
+      return showToast("'Van' datum is verplicht bij reden Ziek", "error");
+    }
+
+    if (vals.reden === "Vakantie") {
+      if (!vals.van_date) return showToast("'Van' datum is verplicht bij Vakantie", "error");
+      if (!vals.end_date) return showToast("'Tot en met' datum is verplicht bij Vakantie", "error");
+    }
+
+    if (vals.reden === "Niet meer werkzaam voor ons" && !vals.van_date) {
+      return showToast("'Van' datum is verplicht bij deze reden", "error");
+    }
+
+    // ---------------------------------------
+    // 🚀 PUT REQUEST
+    // ---------------------------------------
+    const res = await fetch(`/api/members/${m.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(vals),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      console.error("❌ Member update error:", err);
+      return showToast(err.error || "Fout bij opslaan member", "error");
+    }
+
+    const updated = await res.json();
+    Object.assign(m, updated);
+
+    showToast("Member opgeslagen", "success");
+    renderMembers();
+    // geschiedenis opnieuw laden
+loadHistory();
+
   }, () => confirmDelete("member", async () => {
     try {
       const res = await fetch(`/api/members/${m.id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Fout bij verwijderen member");
+
       members = members.filter(x => x.id !== m.id);
       showToast("Member verwijderd", "success");
       renderMembers();
@@ -2245,7 +2549,85 @@ function openMemberDetail(m) {
       showToast("Fout bij verwijderen member", "error");
     }
   }));
+
+  // -------------------------------------------------
+  // ⭐ LIVE UPDATE LOGICA (stap 3)
+  // -------------------------------------------------
+  setTimeout(() => {
+    const endDateInput = document.getElementById("end_date");
+    const redenInput = document.getElementById("reden");
+    const infoBox = document.querySelector("[data-id='reactivateInfoBox']");
+
+    function updateInfo() {
+      if (!infoBox) return;
+
+      const endDate = endDateInput.value;
+      const reden = redenInput.value;
+
+      if (endDate && (reden === "Vakantie" || reden === "Ziek")) {
+        const dt = new Date(endDate);
+        dt.setDate(dt.getDate() + 1);
+        const formatted = dt.toISOString().split("T")[0];
+
+        infoBox.innerHTML = `
+          🔄 Deze medewerker wordt automatisch weer actief op 
+          <strong>${formatted}</strong>
+        `;
+      } else {
+        infoBox.innerHTML = "";
+      }
+    }
+
+    endDateInput?.addEventListener("change", updateInfo);
+    redenInput?.addEventListener("change", updateInfo);
+
+  }, 200);
+  // ===============================================
+// ⭐ Load Member History
+// ===============================================
+async function loadHistory() {
+  const historyBox = document.getElementById("memberHistory");
+  if (!historyBox) return;
+
+  const res = await fetch(`/api/members/${m.id}/history`);
+  if (!res.ok) {
+    historyBox.innerHTML = "<div class='text-danger'>❌ Fout bij laden historie</div>";
+    return;
+  }
+
+  const rows = await res.json();
+
+  if (!rows.length) {
+    historyBox.innerHTML = "<div class='text-gray-500'>Geen wijzigingen geregistreerd</div>";
+    return;
+  }
+
+  historyBox.innerHTML = rows.map(h => {
+    const dt = new Date(h.created_at).toLocaleString();
+
+    return `
+      <div class="p-2 border rounded bg-gray-50 dark:bg-gray-800">
+        <div class="font-medium">${dt}</div>
+
+        <div>Status: 
+          <strong>${h.active_after ? "Actief" : "Inactief"}</strong>
+          ${h.active_before !== h.active_after ? "⚠️ (gewijzigd)" : ""}
+        </div>
+
+        ${h.reden ? `<div>Reden: <strong>${h.reden}</strong></div>` : ""}
+        ${h.van_date ? `<div>Van: ${h.van_date.split("T")[0]}</div>` : ""}
+        ${h.tot_date ? `<div>Tot en met: ${h.tot_date.split("T")[0]}</div>` : ""}
+      </div>
+    `;
+  }).join("");
 }
+
+setTimeout(loadHistory, 150);
+}
+
+
+
+
 
 function renderLeads(){
   const list=document.getElementById("leadsList");
@@ -2307,27 +2689,80 @@ function openQuoteDetail(q){
 }
 
 // ---------- Instellingen ----------
-function renderSettings(){
-  const blk=(title,arr,add,rem)=>`
-  <div class="border rounded p-4 bg-white dark:bg-gray-900">
-    <h3 class="font-semibold mb-2">${title}</h3>
-    <div class="flex gap-2 mb-3">
-      <input id="${title}-input" class="border rounded px-2 py-1 flex-grow dark:bg-gray-800" placeholder="Nieuwe ${title.toLowerCase()}"/>
-      <button onclick="${add}" class="bg-primary text-white px-3 py-1 rounded">Toevoegen</button>
-    </div>
-    <ul class="space-y-1">
-      ${arr.map((x,i)=>`
-        <li class="flex justify-between items-center bg-gray-50 dark:bg-gray-800 px-2 py-1 rounded">
-          <span>${x}</span>
-          <button onclick="${rem}(${i})" class="text-danger text-sm">Verwijderen</button>
-        </li>`).join("")}
-    </ul>
-  </div>`;
+async function renderSettings(){
+  const blk = (title, arr, add, rem) => `
+    <div class="border rounded p-4 bg-white dark:bg-gray-900">
+      <h3 class="font-semibold mb-2">${title}</h3>
+      <div class="flex gap-2 mb-3">
+        <input id="${title}-input" class="border rounded px-2 py-1 flex-grow dark:bg-gray-800" placeholder="Nieuwe ${title.toLowerCase()}"/>
+        <button onclick="${add}" class="bg-primary text-white px-3 py-1 rounded">Toevoegen</button>
+      </div>
+      <ul class="space-y-1">
+        ${arr.map((x,i)=>`
+          <li class="flex justify-between items-center bg-gray-50 dark:bg-gray-800 px-2 py-1 rounded">
+            <span>${x}</span>
+            <button onclick="${rem}(${i})" class="text-danger text-sm">Verwijderen</button>
+          </li>`).join("")}
+      </ul>
+    </div>`;
+
+  // === DYNAMISCH ophalen van Reasons ===
+  const rRes = await fetch("/api/member-reasons");
+  const reasonsRaw = rRes.ok ? await rRes.json() : [];
+  settings.reasons = reasonsRaw.map(r => r.name);
+
   document.getElementById("typeServiceSettings").innerHTML=blk("Type Services",settings.typeServices,"addTypeService()","removeTypeService");
   document.getElementById("frequenciesSettings").innerHTML=blk("Frequenties",settings.frequencies,"addFrequency()","removeFrequency");
   document.getElementById("rolesSettings").innerHTML=blk("Rollen",settings.roles,"addRole()","removeRole");
   document.getElementById("tagsSettings").innerHTML=blk("Tags",settings.tags,"addTag()","removeTag");
+  // ==== REASONS BLOK ====
+  document.getElementById("reasonsSettings").innerHTML = `
+    <div class="border rounded p-4 bg-white dark:bg-gray-900">
+      <h3 class="font-semibold mb-2">Redenen (Members)</h3>
+
+      <div class="flex gap-2 mb-3">
+        <input id="reasons-input" class="border rounded px-2 py-1 flex-grow dark:bg-gray-800" placeholder="Nieuwe reden"/>
+        <button id="addReasonBtn" class="bg-primary text-white px-3 py-1 rounded">Toevoegen</button>
+      </div>
+
+      <ul id="reasonList" class="space-y-1">
+        ${settings.reasons.map(r=>`
+          <li class="flex justify-between items-center bg-gray-50 dark:bg-gray-800 px-2 py-1 rounded">
+            <span>${r}</span>
+            <button class="text-danger text-sm reason-del" data-value="${r}">Verwijderen</button>
+          </li>
+        `).join("")}
+      </ul>
+    </div>
+  `;
+
+  // ==== EVENT HANDLERS ====
+  document.getElementById("addReasonBtn").onclick = async () => {
+    const val = document.getElementById("reasons-input").value.trim();
+    if (!val) return showToast("Vul een reden in", "error");
+
+    await fetch("/api/member-reasons", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value: val })
+    });
+
+    renderSettings(); // herladen
+  };
+
+  document.querySelectorAll(".reason-del").forEach(btn => {
+    btn.onclick = async () => {
+      const val = btn.dataset.value;
+      await fetch("/api/member-reasons", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: val })
+      });
+      renderSettings();
+    };
+  });
 }
+
 function addTypeService(){addItem("Type Services","typeServices");}
 function removeTypeService(i){settings.typeServices.splice(i,1);renderSettings();}
 function addFrequency(){addItem("Frequenties","frequencies");}
@@ -2359,6 +2794,7 @@ function setupThemeButtons() {
     document.documentElement.classList.toggle("dark", saved === "dark");
   }
 }
+
 
 // ---------- Helpers ----------
 function openModal(title, fields, onSave, onDelete) {
@@ -2436,12 +2872,20 @@ function openModal(title, fields, onSave, onDelete) {
         break;
 
       case "date":
-        input = document.createElement("input");
-        input.type = "date";
-        input.className = "input";
-        input.name = f.id;
-        if (f.value) input.value = f.value;
-        break;
+  input = document.createElement("input");
+  input.type = "date";
+  input.className = "input";
+  input.name = f.id;
+
+  // 🛠️ ISO → yyyy-mm-dd (veilig)
+  if (f.value) {
+    let iso = f.value;
+    if (typeof iso === "string" && iso.includes("T")) {
+      iso = iso.split("T")[0];
+    }
+    input.value = iso;
+  }
+  break;
 
       case "readonly":
         input = document.createElement("input");
@@ -2610,7 +3054,22 @@ function calcNextVisit(lastVisit, frequency) {
 }
 
 // ---------- 📋 Hulpfunctie voor tabellen ----------
+// =========================================================
+// 📊 Tabel renderer met automatische NL datumformatting
+// =========================================================
 function tableHTML(headers, rows) {
+
+  function formatCell(val) {
+    if (val === null || val === undefined) return "";
+
+    // Herken ISO-date (yyyy-mm-dd of yyyy-mm-ddTHH:mm)
+    if (typeof val === "string" && /^\d{4}-\d{2}-\d{2}/.test(val)) {
+      return toNLDate(val);
+    }
+
+    return val;
+  }
+
   return `
     <table class="min-w-full border-collapse text-sm">
       <thead>
@@ -2621,13 +3080,14 @@ function tableHTML(headers, rows) {
       <tbody>
         ${rows.map(r => `
           <tr class="hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer">
-            ${r.map(v => `<td class="border-b p-2">${v ?? ""}</td>`).join("")}
+            ${r.map(v => `<td class="border-b p-2">${formatCell(v)}</td>`).join("")}
           </tr>
         `).join("")}
       </tbody>
     </table>
   `;
 }
+
 // ---------- 🗑️ Bevestigingsdialoog ----------
 function confirmDelete(typeLabel, onConfirm) {
   const ok = confirm(`Weet je zeker dat je deze ${typeLabel} wilt verwijderen?`);
@@ -2708,5 +3168,83 @@ setInterval(async () => {
     console.warn("Auto-refresh fout:", err.message);
   }
 }, 30000); // elke 30 seconden automatisch vernieuwen
+
+/**************************************************************
+ *   TOOR AI CHAT ASSISTANT – Front-End Logic
+ **************************************************************/
+
+let aiChatHistory = [];
+
+const aiBtn = document.getElementById("aiChatButton");
+const aiPanel = document.getElementById("aiChatPanel");
+const aiClose = document.getElementById("aiChatClose");
+const aiInput = document.getElementById("aiChatInput");
+const aiSend = document.getElementById("aiChatSend");
+const aiMessages = document.getElementById("aiChatMessages");
+
+// Panel open/close
+aiBtn.onclick = () => aiPanel.classList.remove("hidden");
+aiClose.onclick = () => aiPanel.classList.add("hidden");
+
+// Scroll helper
+function scrollChatToBottom() {
+  aiMessages.scrollTop = aiMessages.scrollHeight;
+}
+
+// Add user or assistant message
+function addChatMessage(sender, text) {
+  const bubble =
+    sender === "user"
+      ? `<div class="text-right"><div class="inline-block bg-primary text-white px-3 py-2 rounded-lg max-w-[90%]">${text}</div></div>`
+      : `<div class="text-left"><div class="inline-block bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 px-3 py-2 rounded-lg max-w-[90%]">${text}</div></div>`;
+
+  aiMessages.insertAdjacentHTML("beforeend", bubble);
+  scrollChatToBottom();
+}
+
+// Send question to backend
+async function sendChatQuestion() {
+  const question = aiInput.value.trim();
+  if (!question) return;
+
+  // Show user bubble
+  addChatMessage("user", question);
+  aiInput.value = "";
+  aiInput.focus();
+
+  // Add loader bubble
+  const loaderId = "loader-" + Date.now();
+  aiMessages.insertAdjacentHTML(
+    "beforeend",
+    `<div id="${loaderId}" class="text-left"><div class="inline-block bg-gray-200 dark:bg-gray-700 text-gray-500 px-3 py-2 rounded-lg">...</div></div>`
+  );
+  scrollChatToBottom();
+
+  try {
+    const res = await fetch("/api/assistant/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question }),
+    });
+
+    const data = await res.json();
+
+    // Remove loader
+    document.getElementById(loaderId)?.remove();
+
+    // Add assistant bubble
+    addChatMessage("assistant", data.answer || "Geen antwoord ontvangen.");
+  } catch (err) {
+    console.error("AI Chat error:", err);
+    document.getElementById(loaderId)?.remove();
+    addChatMessage("assistant", "Er ging iets mis bij het ophalen van het antwoord.");
+  }
+}
+
+// Events
+aiSend.onclick = sendChatQuestion;
+aiInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") sendChatQuestion();
+});
 
 
